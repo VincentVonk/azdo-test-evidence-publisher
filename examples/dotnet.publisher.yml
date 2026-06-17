@@ -1,0 +1,18 @@
+azdo:
+  tokenEnvVar: AZDO_TOKEN
+
+settings:
+  mappingPattern: "TC-(\\d+)"
+
+runs:
+  - name: dotnet-trx
+    resultFormat: trx
+    resultFiles:
+      - TestResults/**/*.trx
+    evidenceFolder: TestResults
+
+  - name: nunit
+    resultFormat: nunit
+    resultFiles:
+      - TestResults/**/*.xml
+    evidenceFolder: TestResults

@@ -1,0 +1,13 @@
+azdo:
+  tokenEnvVar: AZDO_TOKEN
+
+settings:
+  mappingPattern: "TC-(\\d+)"
+  allowUnmapped: false
+
+runs:
+  - name: robot
+    resultFormat: robot
+    resultFiles:
+      - results/output.xml
+    evidenceFolder: results

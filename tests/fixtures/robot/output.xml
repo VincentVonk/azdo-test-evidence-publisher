@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<robot>
+  <suite name="Acceptance">
+    <test name="User can sign in">
+      <tags>
+        <tag>TC-201</tag>
+        <tag>smoke</tag>
+      </tags>
+      <status status="PASS" elapsed="0.042"/>
+    </test>
+    <test name="Checkout fails cleanly">
+      <tags>
+        <tag>TC-202</tag>
+      </tags>
+      <status status="FAIL" elapsed="0.100">Expected confirmation page</status>
+    </test>
+  </suite>
+</robot>

@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<TestRun xmlns="http://microsoft.com/schemas/VisualStudio/TeamTest/2010">
+  <TestDefinitions>
+    <UnitTest name="TC-301 Calculator adds" id="u1">
+      <TestMethod className="CalculatorTests" name="Adds"/>
+    </UnitTest>
+    <UnitTest name="TC-302 Calculator divides" id="u2">
+      <TestMethod className="CalculatorTests" name="Divides"/>
+    </UnitTest>
+  </TestDefinitions>
+  <Results>
+    <UnitTestResult testId="u1" testName="TC-301 Calculator adds" outcome="Passed" duration="00:00:01.250"/>
+    <UnitTestResult testId="u2" testName="TC-302 Calculator divides" outcome="Failed" duration="00:00:00.500">
+      <Output>
+        <ErrorInfo>
+          <Message>division by zero</Message>
+          <StackTrace>at CalculatorTests.Divides()</StackTrace>
+        </ErrorInfo>
+      </Output>
+    </UnitTestResult>
+  </Results>
+</TestRun>

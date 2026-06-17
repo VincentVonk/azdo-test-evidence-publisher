@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<test-run>
+  <test-suite type="Assembly" name="Example">
+    <test-case name="TC-401 saves order" fullname="Example.OrderTests.TC-401 saves order" result="Passed" duration="0.2">
+      <properties>
+        <property name="Category" value="smoke"/>
+      </properties>
+    </test-case>
+    <test-case name="refunds order" fullname="Example.OrderTests.refunds order" result="Failed" duration="0.3">
+      <properties>
+        <property name="Category" value="TC-402"/>
+      </properties>
+      <failure>
+        <message>refund rejected</message>
+        <stack-trace>at OrderTests.Refund()</stack-trace>
+      </failure>
+    </test-case>
+  </test-suite>
+</test-run>

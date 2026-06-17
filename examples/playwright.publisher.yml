@@ -1,0 +1,14 @@
+azdo:
+  tokenEnvVar: AZDO_TOKEN
+
+settings:
+  mappingPattern: "TC-(\\d+)"
+  uploadResultEvidenceFor: failed
+
+runs:
+  - name: playwright
+    resultFormat: junit
+    resultFiles:
+      - playwright-report/junit.xml
+      - test-results/**/*.xml
+    evidenceFolder: test-results

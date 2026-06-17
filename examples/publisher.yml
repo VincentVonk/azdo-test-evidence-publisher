@@ -1,0 +1,38 @@
+azdo:
+  organization: https://dev.azure.com/example-org
+  project: ExampleProject
+  planId: 123
+  suiteId: 456
+  tokenEnvVar: AZDO_TOKEN
+
+settings:
+  mappingPattern: "TC-(\\d+)"
+  allowUnmapped: false
+  uploadRunEvidence: true
+  uploadResultEvidence: true
+  uploadResultEvidenceFor: failed
+  duplicateStrategy: fail
+  maxAttachmentSizeMb: 25
+
+runs:
+  - name: junit
+    resultFormat: junit
+    resultFiles:
+      - ../tests/fixtures/junit/*.xml
+    evidenceFolder: ../tests/fixtures/evidence
+
+  - name: robot
+    resultFormat: robot
+    resultFiles:
+      - ../tests/fixtures/robot/output.xml
+    evidenceFolder: ../tests/fixtures/robot
+
+  - name: trx
+    resultFormat: trx
+    resultFiles:
+      - ../tests/fixtures/trx/*.trx
+
+  - name: nunit
+    resultFormat: nunit
+    resultFiles:
+      - ../tests/fixtures/nunit/*.xml

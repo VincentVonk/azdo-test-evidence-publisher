@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuite name="backend" tests="3">
+  <testcase classname="com.example.LoginTests" name="TC-101 user can login" time="0.123">
+    <properties>
+      <property name="tag" value="smoke"/>
+    </properties>
+  </testcase>
+  <testcase classname="com.example.PaymentTests" name="payment is rejected" time="0.5">
+    <failure message="TC-102 card declined">Expected success</failure>
+  </testcase>
+  <testcase classname="com.example.ProfileTests" name="profile pending" time="0">
+    <skipped message="TC-103 not implemented"/>
+  </testcase>
+</testsuite>

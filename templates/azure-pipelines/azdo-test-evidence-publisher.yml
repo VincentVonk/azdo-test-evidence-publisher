@@ -1,0 +1,29 @@
+parameters:
+  configPath: publisher.yml
+  pythonVersion: "3.11"
+  publishCommand: publish
+
+steps:
+  - task: UsePythonVersion@0
+    inputs:
+      versionSpec: ${{ parameters.pythonVersion }}
+
+  - script: |
+      python -m pip install --upgrade pip
+      python -m pip install .
+    displayName: Install azdo-test-evidence-publisher
+
+  - script: |
+      python -m azdo_test_publisher ${{ parameters.publishCommand }} --config "${{ parameters.configPath }}"
+    displayName: Publish test evidence to Azure DevOps Test Plans
+    env:
+      AZDO_TOKEN: $(System.AccessToken)
+      AZDO_ORG: $(AZDO_ORG)
+      AZDO_PROJECT: $(AZDO_PROJECT)
+      AZDO_PLAN_ID: $(AZDO_PLAN_ID)
+      AZDO_SUITE_ID: $(AZDO_SUITE_ID)
+
+# Required:
+# - Enable "Allow scripts to access the OAuth token" for the pipeline job.
+# - Grant the build service identity permission to read/update the target Test Plan and Suite.
+# - Define AZDO_ORG, AZDO_PROJECT, AZDO_PLAN_ID, and AZDO_SUITE_ID or provide them in publisher.yml.
