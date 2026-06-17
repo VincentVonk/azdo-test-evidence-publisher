@@ -176,7 +176,12 @@ Supported evidence extensions:
 
 Evidence larger than `maxAttachmentSizeMb` is skipped. Evidence files containing the mapped TC ID in their path or file name are attached to that test result when result-level evidence is enabled. By default, result-level evidence is attached for failed tests. Unmatched evidence remains run-level evidence.
 
-Robot `output.xml`, `log.html`, and `report.html` are always run-level evidence.
+Evidence logging uses explicit lifecycle terms:
+
+- scanned = files found under the configured evidence folder before filtering
+- eligible = files allowed by type and size
+- matched = eligible files linked to a specific test result
+- uploaded = files actually attached to Azure DevOps
 
 ## Framework Examples
 

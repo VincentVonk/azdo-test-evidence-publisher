@@ -2,7 +2,12 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from azdo_test_publisher.evidence.collector import EvidenceAssociator, EvidenceCollector, associate_evidence
+from azdo_test_publisher.evidence.collector import (
+    EvidenceAssociator,
+    EvidenceCollector,
+    associate_evidence,
+    associate_evidence_with_summary,
+)
 from azdo_test_publisher.models import Attachment, AttachmentLevel, Outcome, TestResult
 
 FIXTURES = Path(__file__).parents[1] / "fixtures"
@@ -14,6 +19,31 @@ def test_evidence_collection_skips_unsupported_type() -> None:
     assert "TC-102-failure.png" in names
     assert "ignored.exe" not in names
     assert len(summary.skipped_type) == 1
+    assert summary.scanned_count == 4
+    assert summary.eligible_count == 3
+    assert summary.skipped_type_count == 1
+    assert summary.skipped_size_count == 0
+    assert summary.directories_skipped_count == 1
+
+
+def test_evidence_collection_counts_size_skips_and_directories(tmp_path: Path) -> None:
+    evidence_dir = tmp_path / "evidence"
+    nested_dir = evidence_dir / "nested"
+    nested_dir.mkdir(parents=True)
+    eligible = evidence_dir / "TC-1.log"
+    oversized = nested_dir / "TC-1.zip"
+    unsupported = evidence_dir / "style.css"
+    eligible.write_text("ok", encoding="utf-8")
+    oversized.write_bytes(b"x" * 2)
+    unsupported.write_text("css", encoding="utf-8")
+
+    summary = EvidenceCollector(max_attachment_size_mb=0).collect(tmp_path, "evidence")
+
+    assert summary.scanned_count == 3
+    assert summary.eligible_count == 0
+    assert summary.skipped_type_count == 1
+    assert summary.skipped_size_count == 2
+    assert summary.directories_skipped_count == 1
 
 
 def test_evidence_association_by_tc_id_in_filename() -> None:
@@ -25,6 +55,21 @@ def test_evidence_association_by_tc_id_in_filename() -> None:
     by_name = {attachment.name: attachment for attachment in attachments}
     assert by_name["TC-102-failure.png"].attachment_level == AttachmentLevel.RESULT
     assert by_name["TC-102-failure.png"].related_test_case_id == "102"
+
+
+def test_evidence_matching_summary_counts_tc_id_match() -> None:
+    summary = EvidenceCollector(max_attachment_size_mb=25).collect(FIXTURES, "evidence")
+    results = [
+        TestResult("102", "payment is rejected", "payment is rejected", Outcome.FAILED),
+        TestResult("999", "unmatched", "unmatched", Outcome.FAILED),
+    ]
+
+    _attachments, matching = associate_evidence_with_summary(summary.attachments, results, "failed")
+
+    assert matching.tests_requiring_result_evidence == 2
+    assert matching.tests_with_matched_evidence == 1
+    assert matching.tests_without_matched_evidence == 1
+    assert matching.result_level_files_matched == 1
 
 
 def test_evidence_association_by_tc_id_in_directory(tmp_path: Path) -> None:

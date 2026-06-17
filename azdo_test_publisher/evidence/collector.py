@@ -34,6 +34,29 @@ class EvidenceSummary:
     attachments: list[Attachment] = field(default_factory=list)
     skipped_size: list[Path] = field(default_factory=list)
     skipped_type: list[Path] = field(default_factory=list)
+    scanned_count: int = 0
+    directories_skipped_count: int = 0
+
+    @property
+    def eligible_count(self) -> int:
+        return len(self.attachments)
+
+    @property
+    def skipped_size_count(self) -> int:
+        return len(self.skipped_size)
+
+    @property
+    def skipped_type_count(self) -> int:
+        return len(self.skipped_type)
+
+
+@dataclass(slots=True)
+class EvidenceMatchingSummary:
+    tests_requiring_result_evidence: int = 0
+    tests_with_matched_evidence: int = 0
+    tests_without_matched_evidence: int = 0
+    result_level_files_matched: int = 0
+    run_level_files_selected: int = 0
 
 
 class EvidenceCollector:
@@ -50,14 +73,21 @@ class EvidenceCollector:
             if folder.is_file():
                 files.append(folder)
             elif folder.is_dir():
-                files.extend(path for path in folder.rglob("*") if path.is_file())
+                for path in folder.rglob("*"):
+                    if path.is_dir():
+                        summary.directories_skipped_count += 1
+                    elif path.is_file():
+                        files.append(path)
         for path in sorted(set(file.resolve() for file in files)):
+            summary.scanned_count += 1
             if path.suffix.lower() not in SUPPORTED_EXTENSIONS:
                 summary.skipped_type.append(path)
+                logger.debug("Evidence skipped due to unsupported type: %s", path)
                 continue
             size = path.stat().st_size
             if size > self.max_bytes:
                 summary.skipped_size.append(path)
+                logger.debug("Evidence skipped due to size limit: %s", path)
                 continue
             mime_type = guess_type(path.name)[0] or "application/octet-stream"
             summary.attachments.append(
@@ -112,16 +142,14 @@ class EvidenceAssociator:
                     continue
                 associations[result.test_case_id].evidence_files.append(attachment)
                 seen_by_result[result.test_case_id].add(resolved_path)
-                logger.info(
-                    "Matched evidence: tcId=%s file=%s strategy=%s",
-                    result.test_case_id,
-                    attachment.name,
-                    strategy,
-                )
+                logger.info("Matched evidence")
+                logger.info("  tcId=%s", result.test_case_id)
+                logger.info("  file=%s", attachment.name)
+                logger.info("  strategy=%s", strategy)
 
         for test_case_id, association in associations.items():
             if not association.evidence_files:
-                logger.warning("No evidence matched: tcId=%s", test_case_id)
+                logger.debug("No evidence matched: tcId=%s", test_case_id)
 
         return associations
 
@@ -151,6 +179,45 @@ class EvidenceAssociator:
         return normalized_name in _normalize(str(attachment.path))
 
 
+def associate_evidence_with_summary(
+    attachments: list[Attachment],
+    results: list[TestResult],
+    upload_result_evidence_for: str = "failed",
+    tc_id_pattern: str = r"TC-(\d+)",
+    custom_matchers: list[EvidenceMatcher] | None = None,
+) -> tuple[list[Attachment], EvidenceMatchingSummary]:
+    by_id = {result.test_case_id: result for result in results if result.test_case_id}
+    result_scope = upload_result_evidence_for.lower()
+    associator = EvidenceAssociator(tc_id_pattern=tc_id_pattern, custom_matchers=custom_matchers)
+    associations = associator.associate(results, attachments)
+    associated = _deduplicate_attachments(attachments)
+    attachment_by_path = {attachment.path.resolve(): attachment for attachment in associated}
+    matching_summary = EvidenceMatchingSummary()
+    for test_case_id, association in associations.items():
+        matched_result = by_id.get(test_case_id)
+        if not matched_result or not _outcome_allowed(matched_result, result_scope):
+            continue
+        matching_summary.tests_requiring_result_evidence += 1
+        if association.evidence_files:
+            matching_summary.tests_with_matched_evidence += 1
+        else:
+            matching_summary.tests_without_matched_evidence += 1
+            logger.warning("No result-level evidence matched")
+            logger.warning("  tcId=%s", matched_result.test_case_id)
+            logger.warning("  testName=%s", matched_result.name)
+        for evidence_file in association.evidence_files:
+            attachment = attachment_by_path[evidence_file.path.resolve()]
+            attachment.attachment_level = AttachmentLevel.RESULT
+            attachment.related_test_case_id = matched_result.test_case_id
+    matching_summary.result_level_files_matched = sum(
+        1 for attachment in associated if attachment.attachment_level == AttachmentLevel.RESULT
+    )
+    matching_summary.run_level_files_selected = sum(
+        1 for attachment in associated if attachment.attachment_level == AttachmentLevel.RUN
+    )
+    return associated, matching_summary
+
+
 def associate_evidence(
     attachments: list[Attachment],
     results: list[TestResult],
@@ -158,20 +225,13 @@ def associate_evidence(
     tc_id_pattern: str = r"TC-(\d+)",
     custom_matchers: list[EvidenceMatcher] | None = None,
 ) -> list[Attachment]:
-    by_id = {result.test_case_id: result for result in results if result.test_case_id}
-    result_scope = upload_result_evidence_for.lower()
-    associator = EvidenceAssociator(tc_id_pattern=tc_id_pattern, custom_matchers=custom_matchers)
-    associations = associator.associate(results, attachments)
-    associated = _deduplicate_attachments(attachments)
-    attachment_by_path = {attachment.path.resolve(): attachment for attachment in associated}
-    for test_case_id, association in associations.items():
-        matched_result = by_id.get(test_case_id)
-        if not matched_result or not _outcome_allowed(matched_result, result_scope):
-            continue
-        for evidence_file in association.evidence_files:
-            attachment = attachment_by_path[evidence_file.path.resolve()]
-            attachment.attachment_level = AttachmentLevel.RESULT
-            attachment.related_test_case_id = matched_result.test_case_id
+    associated, _summary = associate_evidence_with_summary(
+        attachments,
+        results,
+        upload_result_evidence_for,
+        tc_id_pattern,
+        custom_matchers,
+    )
     return associated
 
 

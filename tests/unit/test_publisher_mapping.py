@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import logging
 
 import pytest
 
@@ -16,6 +17,7 @@ class FakeClient:
         self.create_run_called = False
         self.post_results_called = False
         self.update_results_payload: list[dict] = []
+        self.uploaded_run_attachments: list[tuple[int, str]] = []
         self.uploaded_result_attachments: list[tuple[int, int, str]] = []
 
     def get_test_points(self, plan_id: int, suite_id: int):
@@ -42,6 +44,10 @@ class FakeClient:
 
     def upload_result_attachment(self, run_id: int, result_id: int, name: str, data: bytes, comment: str = ""):
         self.uploaded_result_attachments.append((run_id, result_id, name))
+        return {}
+
+    def upload_run_attachment(self, run_id: int, name: str, data: bytes, comment: str = ""):
+        self.uploaded_run_attachments.append((run_id, name))
         return {}
 
     def complete_test_run(self, run_id: int):
@@ -334,3 +340,78 @@ def test_result_attachment_uses_existing_run_result_id(tmp_path) -> None:
 
     assert fake_client.uploaded_result_attachments == [(99, 1001, "TC-101-failure.log")]
     assert fake_client.post_results_called is False
+
+
+def test_upload_summary_counts_result_attachment(tmp_path, caplog) -> None:
+    config_file = tmp_path / "publisher.json"
+    config_file.write_text(
+        json.dumps(
+            {
+                "azdo": {
+                    "organization": "https://dev.azure.com/org",
+                    "project": "Project",
+                    "planId": 1,
+                    "suiteId": 2,
+                },
+                "runs": [{"name": "junit", "resultFormat": "junit", "resultFiles": ["*.xml"]}],
+            }
+        ),
+        encoding="utf-8",
+    )
+    evidence = tmp_path / "TC-101-failure.log"
+    evidence.write_text("failure evidence", encoding="utf-8")
+    attachment = Attachment(
+        path=evidence,
+        name=evidence.name,
+        size_bytes=evidence.stat().st_size,
+        mime_type="text/plain",
+        attachment_level=AttachmentLevel.RESULT,
+        related_test_case_id="101",
+    )
+    publisher = AzureDevOpsPublisher(load_config(config_file), "secret")
+    fake_client = FakeClient()
+    publisher.client = fake_client  # type: ignore[assignment]
+
+    with caplog.at_level(logging.INFO):
+        publisher.publish([TestResult("101", "x", "x", Outcome.FAILED, message="failed")], [attachment])
+
+    assert "Evidence upload summary" in caplog.text
+    assert "  Result-level attachments uploaded: 1" in caplog.text
+    assert "  Run-level attachments uploaded: 0" in caplog.text
+    assert "  Attachments skipped: 0" in caplog.text
+
+
+def test_eligible_evidence_but_no_upload_warns(tmp_path, caplog) -> None:
+    config_file = tmp_path / "publisher.json"
+    config_file.write_text(
+        json.dumps(
+            {
+                "azdo": {
+                    "organization": "https://dev.azure.com/org",
+                    "project": "Project",
+                    "planId": 1,
+                    "suiteId": 2,
+                },
+                "settings": {"uploadRunEvidence": False, "uploadResultEvidence": False},
+                "runs": [{"name": "junit", "resultFormat": "junit", "resultFiles": ["*.xml"]}],
+            }
+        ),
+        encoding="utf-8",
+    )
+    evidence = tmp_path / "run.log"
+    evidence.write_text("run evidence", encoding="utf-8")
+    attachment = Attachment(
+        path=evidence,
+        name=evidence.name,
+        size_bytes=evidence.stat().st_size,
+        mime_type="text/plain",
+        attachment_level=AttachmentLevel.RUN,
+    )
+    publisher = AzureDevOpsPublisher(load_config(config_file), "secret")
+    fake_client = FakeClient()
+    publisher.client = fake_client  # type: ignore[assignment]
+
+    with caplog.at_level(logging.WARNING):
+        publisher.publish([TestResult("101", "x", "x", Outcome.PASSED)], [attachment])
+
+    assert "Evidence files were eligible but no attachments were uploaded." in caplog.text

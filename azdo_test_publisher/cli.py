@@ -8,7 +8,12 @@ from pathlib import Path
 
 from .azdo.publisher import AzureDevOpsPublisher
 from .config import ConfigError, load_config, resolve_token
-from .evidence.collector import EvidenceCollector, EvidenceSummary, associate_evidence
+from .evidence.collector import (
+    EvidenceCollector,
+    EvidenceMatchingSummary,
+    EvidenceSummary,
+    associate_evidence_with_summary,
+)
 from .mapping import (
     MappingError,
     apply_mapping,
@@ -33,6 +38,7 @@ class ValidationResult:
     results: list[TestResult] = field(default_factory=list)
     attachments: list[Attachment] = field(default_factory=list)
     evidence: EvidenceSummary = field(default_factory=EvidenceSummary)
+    evidence_matching: EvidenceMatchingSummary = field(default_factory=EvidenceMatchingSummary)
     errors: list[str] = field(default_factory=list)
     duplicate_details: dict[str, list[TestResult]] = field(default_factory=dict)
     publish_ready: bool = False
@@ -90,8 +96,10 @@ def validate_config(config_path: str | Path, enforce: bool = True) -> Validation
         validation.evidence.attachments.extend(evidence.attachments)
         validation.evidence.skipped_size.extend(evidence.skipped_size)
         validation.evidence.skipped_type.extend(evidence.skipped_type)
+        validation.evidence.scanned_count += evidence.scanned_count
+        validation.evidence.directories_skipped_count += evidence.directories_skipped_count
 
-    validation.attachments = associate_evidence(
+    validation.attachments, validation.evidence_matching = associate_evidence_with_summary(
         validation.evidence.attachments,
         validation.results,
         config.settings.upload_result_evidence_for,
@@ -132,9 +140,18 @@ def _print_validation_summary(validation: ValidationResult, duplicates: dict[str
         logger.warning("Duplicate TC mappings: %s", ", ".join(f"{key} ({value})" for key, value in duplicates.items()))
     else:
         logger.info("Duplicate TC mappings: none")
-    logger.info("Evidence files discovered: %s", len(validation.evidence.attachments))
-    logger.info("Evidence files skipped due to size: %s", len(validation.evidence.skipped_size))
-    logger.info("Evidence files skipped due to type: %s", len(validation.evidence.skipped_type))
+    logger.info("Evidence scan summary")
+    logger.info("  Files scanned: %s", validation.evidence.scanned_count)
+    logger.info("  Files eligible: %s", validation.evidence.eligible_count)
+    logger.info("  Files skipped due to unsupported type: %s", validation.evidence.skipped_type_count)
+    logger.info("  Files skipped due to size limit: %s", validation.evidence.skipped_size_count)
+    logger.info("  Directories skipped: %s", validation.evidence.directories_skipped_count)
+    logger.info("Evidence matching summary")
+    logger.info("  Tests requiring result-level evidence: %s", validation.evidence_matching.tests_requiring_result_evidence)
+    logger.info("  Tests with matched evidence: %s", validation.evidence_matching.tests_with_matched_evidence)
+    logger.info("  Tests without matched evidence: %s", validation.evidence_matching.tests_without_matched_evidence)
+    logger.info("  Result-level files matched: %s", validation.evidence_matching.result_level_files_matched)
+    logger.info("  Run-level files selected: %s", validation.evidence_matching.run_level_files_selected)
     if validation.errors:
         logger.error("Publish readiness: not ready")
         for error in validation.errors:
@@ -182,9 +199,17 @@ def validation_report(validation: ValidationResult) -> dict:
             },
         },
         "evidence": {
-            "filesDiscovered": [str(attachment.path) for attachment in validation.evidence.attachments],
-            "fileCount": len(validation.evidence.attachments),
+            "filesScanned": validation.evidence.scanned_count,
+            "filesEligible": validation.evidence.eligible_count,
+            "directoriesSkipped": validation.evidence.directories_skipped_count,
             "skippedDueToSize": [str(path) for path in validation.evidence.skipped_size],
             "skippedDueToType": [str(path) for path in validation.evidence.skipped_type],
+            "matching": {
+                "testsRequiringResultLevelEvidence": validation.evidence_matching.tests_requiring_result_evidence,
+                "testsWithMatchedEvidence": validation.evidence_matching.tests_with_matched_evidence,
+                "testsWithoutMatchedEvidence": validation.evidence_matching.tests_without_matched_evidence,
+                "resultLevelFilesMatched": validation.evidence_matching.result_level_files_matched,
+                "runLevelFilesSelected": validation.evidence_matching.run_level_files_selected,
+            },
         },
     }

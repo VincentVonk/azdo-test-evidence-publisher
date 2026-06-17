@@ -81,10 +81,19 @@ class AzureDevOpsPublisher:
         updated = self.client.update_test_results(run_id, payload)
         result_id_by_case_id = _result_id_by_case_id(updated) or _result_id_by_case_id_from_existing(run_results_by_point_id)
 
+        run_uploads = 0
+        result_uploads = 0
+        skipped_attachments = 0
         if self.config.settings.upload_run_evidence:
             for attachment in attachments:
                 if attachment.attachment_level == AttachmentLevel.RUN:
                     self.client.upload_run_attachment(run_id, attachment.name, attachment.path.read_bytes())
+                    run_uploads += 1
+                    logger.info("Uploaded run attachment")
+                    logger.info("  file=%s", attachment.name)
+                    logger.info("  size=%s", _format_size(attachment.size_bytes))
+        else:
+            skipped_attachments += sum(1 for attachment in attachments if attachment.attachment_level == AttachmentLevel.RUN)
 
         if self.config.settings.upload_result_evidence:
             for attachment in attachments:
@@ -93,6 +102,23 @@ class AzureDevOpsPublisher:
                 result_id = result_id_by_case_id.get(attachment.related_test_case_id)
                 if result_id:
                     self.client.upload_result_attachment(run_id, result_id, attachment.name, attachment.path.read_bytes())
+                    result_uploads += 1
+                    logger.info("Uploaded result attachment")
+                    logger.info("  tcId=%s", attachment.related_test_case_id)
+                    logger.info("  resultId=%s", result_id)
+                    logger.info("  file=%s", attachment.name)
+                    logger.info("  size=%s", _format_size(attachment.size_bytes))
+                else:
+                    skipped_attachments += 1
+        else:
+            skipped_attachments += sum(1 for attachment in attachments if attachment.attachment_level == AttachmentLevel.RESULT)
+
+        logger.info("Evidence upload summary")
+        logger.info("  Result-level attachments uploaded: %s", result_uploads)
+        logger.info("  Run-level attachments uploaded: %s", run_uploads)
+        logger.info("  Attachments skipped: %s", skipped_attachments)
+        if attachments and result_uploads + run_uploads == 0:
+            logger.warning("Evidence files were eligible but no attachments were uploaded.")
 
         self.client.complete_test_run(run_id)
         logger.info("Completed Azure DevOps test run %s", run_id)
@@ -267,3 +293,11 @@ def _result_id_by_case_id_from_existing(results_by_point_id: dict[int, dict[str,
         if case_id and result_id:
             mapped[str(case_id)] = int(result_id)
     return mapped
+
+
+def _format_size(size_bytes: int) -> str:
+    if size_bytes < 1024:
+        return f"{size_bytes} B"
+    if size_bytes < 1024 * 1024:
+        return f"{size_bytes / 1024:.1f} KB"
+    return f"{size_bytes / (1024 * 1024):.1f} MB"

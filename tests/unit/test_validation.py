@@ -68,7 +68,9 @@ def test_validation_report_json(tmp_path: Path) -> None:
     assert report["results"]["fileCount"] == 4
     assert report["results"]["testsParsed"] == 9
     assert report["results"]["testsWithoutTcIds"] == 0
-    assert report["evidence"]["fileCount"] == 4
+    assert report["evidence"]["filesScanned"] >= 4
+    assert report["evidence"]["filesEligible"] == 4
+    assert report["evidence"]["matching"]["resultLevelFilesMatched"] == 1
 
 
 def test_publish_command_does_not_call_azdo_when_validation_fails(tmp_path: Path, monkeypatch) -> None:
