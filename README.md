@@ -1,47 +1,100 @@
-# Azure DevOps Test Evidence Publisher
+# Azure Test Evidence Publisher
 
-`azdo-test-evidence-publisher` is a framework-agnostic Python CLI for publishing automated test results and evidence into Azure DevOps Test Plans.
+`azdo-test-evidence-publisher` is an RBT Lite Feature C shared component for publishing release-relevant automated test evidence to Azure DevOps Test Plans.
 
-Test frameworks keep doing what they already do well: execute tests and produce standard result files plus screenshots, logs, videos, or reports. This publisher owns the Azure DevOps Test Plans integration.
+It is optional. It is not a mandatory testing framework, not a replacement for Azure Test Plans guidance, and not a rule that every automated test must be published to Test Plans.
 
-Supported result inputs in v1:
+## RBT Lite Positioning
 
-- JUnit XML from JUnit, Kotest, Gradle, Maven Surefire, Jest, Playwright, WebdriverIO, Cucumber, and JMeter
+In the RBT Lite model:
+
+- PBI/Feature = decision and intent
+- Test Plans = coverage and structure
+- Pipeline/Automation = execution and evidence
+
+This publisher supports the evidence connection. It helps squads connect pipeline results, screenshots, logs, videos, and reports to existing Azure DevOps Test Cases for release-relevant scenarios such as smoke, regression, E2E, acceptance, and formal sign-off.
+
+Use it when a squad needs traceable evidence in Azure Test Plans. Keep ordinary low-level automated checks in the framework or pipeline when Test Plans traceability adds no release value.
+
+## Supported Inputs
+
+- JUnit XML from JUnit, Kotest, Maven Surefire, Gradle, Jest, Playwright, WebdriverIO, Cucumber, and JMeter
 - Robot Framework `output.xml`
 - Visual Studio TRX from MSTest, SpecFlow, Reqnroll, and other .NET runners
 - NUnit XML
 
-## Quick Start
+Frameworks only need to produce standard result files and evidence folders. The publisher owns the Azure DevOps Test Plans integration.
 
-Install dependencies:
+## Install
+
+JSON config works without PyYAML:
+
+```bash
+python -m pip install .
+```
+
+For development:
 
 ```bash
 python -m pip install -e ".[dev]"
 ```
 
-Validate without calling Azure DevOps:
+YAML is optional. Install it only when needed:
 
 ```bash
-python -m azdo_test_publisher validate --config examples/publisher.json
+python -m pip install "azdo-test-evidence-publisher[yaml]"
 ```
 
-Publish:
+If a `.yml` or `.yaml` config is used without PyYAML, the tool raises:
+
+```text
+YAML config requires PyYAML. Use JSON config or install PyYAML.
+```
+
+## Validation-First Workflow
+
+Run validation before publishing:
 
 ```bash
-export AZDO_TOKEN="your-pat"
-python -m azdo_test_publisher publish --config publisher.json
+python -m azdo_test_publisher validate --config examples/robot.publisher.json
 ```
 
-PowerShell:
+Validation shows:
 
-```powershell
+- files discovered
+- tests parsed
+- tests with TC IDs
+- tests without TC IDs
+- duplicate TC IDs
+- evidence discovered and skipped
+- publish readiness summary
+
+Generate a JSON validation report for pipeline artifacts or PBI attachments:
+
+```bash
+python -m azdo_test_publisher validate --config examples/robot.publisher.json --output validation-report.json
+```
+
+## Publish
+
+Use a PAT locally:
+
+```bash
 $env:AZDO_TOKEN = "your-pat"
 python -m azdo_test_publisher publish --config publisher.json
 ```
 
-## Configuration
+Token priority:
 
-JSON is the default config format and does not require optional dependencies.
+1. Token from `azdo.tokenEnvVar`
+2. `AZDO_TOKEN`
+3. `AZDO_PAT`
+
+Tokens are never logged.
+
+The publisher validates local mappings before Azure DevOps calls. Before creating a Test Run it resolves configured test points, logs mapped/unmapped counts, and fails before run creation if mapping is invalid.
+
+## JSON Config
 
 ```json
 {
@@ -64,36 +117,20 @@ JSON is the default config format and does not require optional dependencies.
   },
   "runs": [
     {
-      "name": "backend",
-      "resultFormat": "junit",
-      "resultFiles": ["build/test-results/**/*.xml"],
-      "evidenceFolder": "build/reports/tests"
+      "name": "robot-acceptance",
+      "resultFormat": "robot",
+      "resultFiles": ["results/output.xml"],
+      "evidenceFolder": "results"
     }
   ]
 }
 ```
 
-YAML remains backward compatible when PyYAML is installed. Install optional YAML support with:
-
-```bash
-python -m pip install "azdo-test-evidence-publisher[yaml]"
-```
-
-If PyYAML is unavailable, use a `.json` config.
-
 Environment fallback is supported for `AZDO_ORG`, `AZDO_PROJECT`, `AZDO_PLAN_ID`, `AZDO_SUITE_ID`, `AZDO_TOKEN`, and `AZDO_PAT`.
 
-Token priority:
+## TC Mapping
 
-1. Token from `azdo.tokenEnvVar`
-2. `AZDO_TOKEN`
-3. `AZDO_PAT`
-
-Tokens are never logged.
-
-## Mapping Convention
-
-Automated tests map to Azure DevOps Test Cases by including `TC-<id>` in a test name, full name/class name, property, tag/category, or as a last resort in a failure message.
+Automated tests map to existing Azure DevOps Test Cases by including `TC-<id>` in a test name, full name/class name, property, tag/category, or as a last-resort fallback in a failure message.
 
 Examples:
 
@@ -101,12 +138,35 @@ Examples:
 - Robot tag: `TC-123`
 - NUnit category: `TC-123`
 
-If one test contains multiple test case IDs, validation fails unless `settings.allowMultipleTestCaseIds` is set to `true`.
+The tool does not create Test Cases, PBIs, features, or links.
 
-If multiple parsed results map to the same Test Case ID, `settings.duplicateStrategy` controls the behavior:
+## Duplicate Handling
 
-- `fail` is the default. Validation and publishing fail before any Azure DevOps API calls. The error lists the duplicate TC IDs and the source files/test names involved.
-- `worst_outcome_wins` aggregates duplicate executions into one normalized result before publishing. Outcome priority is `Failed > NotApplicable > Skipped > Passed`; durations are summed where present; failed/skipped messages, stack traces, and evidence hints are merged.
+Default:
+
+```json
+{
+  "duplicateStrategy": "fail"
+}
+```
+
+With `fail`, validation and publish fail when multiple parsed results map to the same TC ID. Publish does not call Azure DevOps when this validation fails.
+
+Optional:
+
+```json
+{
+  "duplicateStrategy": "worst_outcome_wins"
+}
+```
+
+With `worst_outcome_wins`, duplicate executions are aggregated into one result per TC ID. Outcome priority is:
+
+```text
+Failed > NotApplicable > Skipped > Passed
+```
+
+Durations are summed where available. Failed/skipped messages, stack traces, and evidence hints are merged.
 
 ## Evidence Policy
 
@@ -114,9 +174,39 @@ Supported evidence extensions:
 
 `.png`, `.jpg`, `.jpeg`, `.webp`, `.txt`, `.log`, `.json`, `.xml`, `.html`, `.zip`, `.webm`
 
-Evidence larger than `maxAttachmentSizeMb` is skipped. Evidence files that contain the mapped TC ID in their path or file name are attached to that test result when the result scope allows it. By default, result-level evidence is attached only for failed tests. Unmatched evidence remains run-level evidence.
+Evidence larger than `maxAttachmentSizeMb` is skipped. Evidence files containing the mapped TC ID in their path or file name are attached to that test result when result-level evidence is enabled. By default, result-level evidence is attached for failed tests. Unmatched evidence remains run-level evidence.
 
-Robot `output.xml`, `log.html`, and `report.html` are always treated as run-level evidence.
+Robot `output.xml`, `log.html`, and `report.html` are always run-level evidence.
+
+## Framework Examples
+
+Robot:
+
+```bash
+robot --output results/output.xml --log results/log.html --report results/report.html tests
+python -m azdo_test_publisher validate --config examples/robot.publisher.json
+```
+
+Playwright:
+
+```bash
+npx playwright test --reporter=junit
+python -m azdo_test_publisher validate --config examples/playwright.publisher.json
+```
+
+JUnit:
+
+```bash
+./gradlew test
+python -m azdo_test_publisher validate --config examples/junit.publisher.json
+```
+
+.NET:
+
+```bash
+dotnet test --logger trx
+python -m azdo_test_publisher validate --config examples/dotnet.publisher.json
+```
 
 ## Azure Pipelines
 
@@ -128,48 +218,12 @@ Use `System.AccessToken` by mapping it to `AZDO_TOKEN`:
     configPath: publisher.json
 ```
 
-The pipeline job must allow scripts to access the OAuth token, and the build service identity must have permission to update the configured Test Plan and Suite.
-
-## Framework Examples
-
-Robot:
-
-```bash
-robot --output results/output.xml --log results/log.html --report results/report.html tests
-python -m azdo_test_publisher publish --config examples/robot.publisher.json
-```
-
-Playwright:
-
-```bash
-npx playwright test --reporter=junit
-python -m azdo_test_publisher publish --config examples/playwright.publisher.json
-```
-
-Java/Kotlin:
-
-```bash
-./gradlew test
-python -m azdo_test_publisher publish --config publisher.json
-```
-
-.NET:
-
-```bash
-dotnet test --logger trx
-python -m azdo_test_publisher publish --config examples/dotnet.publisher.json
-```
-
-JMeter:
-
-```bash
-jmeter -n -t test-plan.jmx -l results.jtl -e -o target/jmeter-results
-python -m azdo_test_publisher publish --config examples/jmeter.publisher.json
-```
+The pipeline job must allow scripts to access the OAuth token, and the build service identity must have permission to read/update the target Test Plan and Suite.
 
 ## Troubleshooting
 
 - `allowUnmapped=false` failures mean one or more tests did not contain a `TC-<id>` mapping.
+- Duplicate TC failures mean multiple parsed results mapped to the same Test Case ID and `duplicateStrategy=fail`.
 - Missing Azure DevOps test point errors mean the mapped Test Case is not in the configured suite.
 - Attachment skips are shown in `validate` output by size or unsupported type.
-- `validate` never calls Azure DevOps, so use it first when tuning result globs and mapping patterns.
+- Runtime behavior does not require internet access other than Azure DevOps API calls during `publish`.

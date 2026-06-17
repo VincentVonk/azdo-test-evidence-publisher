@@ -1,9 +1,14 @@
 {
   "azdo": {
+    "organization": "https://dev.azure.com/example-org",
+    "project": "ExampleProject",
+    "planId": 123,
+    "suiteId": 456,
     "tokenEnvVar": "AZDO_TOKEN"
   },
   "settings": {
     "mappingPattern": "TC-(\\d+)",
+    "allowUnmapped": false,
     "uploadResultEvidenceFor": "failed",
     "duplicateStrategy": "fail"
   },
@@ -12,10 +17,9 @@
       "name": "playwright",
       "resultFormat": "junit",
       "resultFiles": [
-        "playwright-report/junit.xml",
-        "test-results/**/*.xml"
+        "../tests/fixtures/junit/*.xml"
       ],
-      "evidenceFolder": "test-results"
+      "evidenceFolder": "../tests/fixtures/evidence"
     }
   ]
 }

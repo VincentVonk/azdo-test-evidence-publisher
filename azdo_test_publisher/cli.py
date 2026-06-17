@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import json
 import logging
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -8,7 +9,14 @@ from pathlib import Path
 from .azdo.publisher import AzureDevOpsPublisher
 from .config import ConfigError, load_config, resolve_token
 from .evidence.collector import EvidenceCollector, EvidenceSummary, associate_evidence
-from .mapping import MappingError, apply_mapping, resolve_duplicate_results, summarize_mapping
+from .mapping import (
+    MappingError,
+    apply_mapping,
+    duplicate_results_by_test_case_id,
+    format_duplicate_error,
+    resolve_duplicate_results,
+    summarize_mapping,
+)
 from .models import DuplicateStrategy
 from .models import Attachment, PublisherConfig, TestResult
 from .parsers import get_parser
@@ -25,6 +33,9 @@ class ValidationResult:
     results: list[TestResult] = field(default_factory=list)
     attachments: list[Attachment] = field(default_factory=list)
     evidence: EvidenceSummary = field(default_factory=EvidenceSummary)
+    errors: list[str] = field(default_factory=list)
+    duplicate_details: dict[str, list[TestResult]] = field(default_factory=dict)
+    publish_ready: bool = False
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -34,6 +45,8 @@ def build_parser() -> argparse.ArgumentParser:
     for command in ("validate", "publish"):
         sub = subparsers.add_parser(command)
         sub.add_argument("--config", required=True)
+        if command == "validate":
+            sub.add_argument("--output", help="Write a JSON validation report to this path")
     return parser
 
 
@@ -42,19 +55,23 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
     configure_logging(args.verbose)
     try:
-        validation = validate_config(args.config)
+        validation = validate_config(args.config, enforce=args.command == "publish")
+        if args.command == "validate" and args.output:
+            write_validation_report(validation, args.output)
         if args.command == "publish":
             token = resolve_token(validation.config)
             if not token:
                 raise ConfigError("No Azure DevOps token found in tokenEnvVar, AZDO_TOKEN, or AZDO_PAT")
             AzureDevOpsPublisher(validation.config, token).publish(validation.results, validation.attachments)
+        if validation.errors:
+            raise MappingError("; ".join(validation.errors))
         return 0
     except (ConfigError, MappingError, ValueError) as exc:
         logger.error(str(exc))
         return 2
 
 
-def validate_config(config_path: str | Path) -> ValidationResult:
+def validate_config(config_path: str | Path, enforce: bool = True) -> ValidationResult:
     config = load_config(config_path)
     validation = ValidationResult(config=config)
     collector = EvidenceCollector(config.settings.max_attachment_size_mb)
@@ -80,15 +97,26 @@ def validate_config(config_path: str | Path) -> ValidationResult:
         config.settings.upload_result_evidence_for,
     )
     summary = summarize_mapping(validation.results)
-    _print_validation_summary(validation, summary.duplicates)
+    validation.duplicate_details = duplicate_results_by_test_case_id(validation.results)
     if summary.unmapped and not config.settings.allow_unmapped:
-        raise MappingError(f"{summary.unmapped} test(s) have no test case ID and allowUnmapped=false")
+        validation.errors.append(f"{summary.unmapped} test(s) have no test case ID and allowUnmapped=false")
+    if validation.duplicate_details and config.settings.duplicate_strategy == DuplicateStrategy.FAIL:
+        validation.errors.append(format_duplicate_error(validation.duplicate_details))
+    _print_validation_summary(validation, summary.duplicates)
+
+    if validation.errors:
+        validation.publish_ready = False
+        if enforce:
+            raise MappingError("; ".join(validation.errors))
+        return validation
+
     validation.results, duplicates = resolve_duplicate_results(validation.results, config.settings.duplicate_strategy)
     if duplicates and config.settings.duplicate_strategy == DuplicateStrategy.WORST_OUTCOME_WINS:
         logger.warning(
             "Duplicate TC mappings were aggregated using worst_outcome_wins: %s",
             ", ".join(f"TC-{test_case_id} ({len(items)} executions)" for test_case_id, items in duplicates.items()),
         )
+    validation.publish_ready = True
     return validation
 
 
@@ -106,3 +134,56 @@ def _print_validation_summary(validation: ValidationResult, duplicates: dict[str
     logger.info("Evidence files discovered: %s", len(validation.evidence.attachments))
     logger.info("Evidence files skipped due to size: %s", len(validation.evidence.skipped_size))
     logger.info("Evidence files skipped due to type: %s", len(validation.evidence.skipped_type))
+    if validation.errors:
+        logger.error("Publish readiness: not ready")
+        for error in validation.errors:
+            logger.error(error)
+    else:
+        logger.info("Publish readiness: ready")
+
+
+def write_validation_report(validation: ValidationResult, output_path: str | Path) -> None:
+    path = Path(output_path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(validation_report(validation), indent=2), encoding="utf-8")
+    logger.info("Validation report written: %s", path)
+
+
+def validation_report(validation: ValidationResult) -> dict:
+    summary = summarize_mapping(validation.results)
+    return {
+        "publishReady": validation.publish_ready,
+        "errors": validation.errors,
+        "config": {
+            "project": validation.config.azdo.project,
+            "planId": validation.config.azdo.plan_id,
+            "suiteId": validation.config.azdo.suite_id,
+            "duplicateStrategy": validation.config.settings.duplicate_strategy.value,
+            "allowUnmapped": validation.config.settings.allow_unmapped,
+        },
+        "results": {
+            "filesDiscovered": [str(path) for path in validation.result_files],
+            "fileCount": len(validation.result_files),
+            "testsParsed": len(validation.results),
+            "testsWithTcIds": summary.mapped,
+            "testsWithoutTcIds": summary.unmapped,
+            "duplicateTcIds": {
+                test_case_id: [
+                    {
+                        "name": result.name,
+                        "fullName": result.full_name,
+                        "sourceFile": result.source_file,
+                        "outcome": result.outcome.value,
+                    }
+                    for result in results
+                ]
+                for test_case_id, results in validation.duplicate_details.items()
+            },
+        },
+        "evidence": {
+            "filesDiscovered": [str(attachment.path) for attachment in validation.evidence.attachments],
+            "fileCount": len(validation.evidence.attachments),
+            "skippedDueToSize": [str(path) for path in validation.evidence.skipped_size],
+            "skippedDueToType": [str(path) for path in validation.evidence.skipped_type],
+        },
+    }

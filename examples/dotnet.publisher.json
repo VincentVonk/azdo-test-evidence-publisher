@@ -1,23 +1,28 @@
 {
   "azdo": {
+    "organization": "https://dev.azure.com/example-org",
+    "project": "ExampleProject",
+    "planId": 123,
+    "suiteId": 456,
     "tokenEnvVar": "AZDO_TOKEN"
   },
   "settings": {
     "mappingPattern": "TC-(\\d+)",
+    "allowUnmapped": false,
     "duplicateStrategy": "fail"
   },
   "runs": [
     {
       "name": "dotnet-trx",
       "resultFormat": "trx",
-      "resultFiles": ["TestResults/**/*.trx"],
-      "evidenceFolder": "TestResults"
+      "resultFiles": ["../tests/fixtures/trx/*.trx"],
+      "evidenceFolder": "../tests/fixtures/evidence"
     },
     {
       "name": "nunit",
       "resultFormat": "nunit",
-      "resultFiles": ["TestResults/**/*.xml"],
-      "evidenceFolder": "TestResults"
+      "resultFiles": ["../tests/fixtures/nunit/*.xml"],
+      "evidenceFolder": "../tests/fixtures/evidence"
     }
   ]
 }

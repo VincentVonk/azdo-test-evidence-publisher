@@ -14,6 +14,10 @@ logger = logging.getLogger(__name__)
 
 class AzureDevOpsPublisher:
     def __init__(self, config: PublisherConfig, token: str) -> None:
+        if not token:
+            raise ValueError("Azure DevOps token is required")
+        if config.azdo.plan_id <= 0 or config.azdo.suite_id <= 0:
+            raise ValueError("Azure DevOps planId and suiteId must be positive integers")
         self.config = config
         self.client = AzureDevOpsClient(config.azdo.organization, config.azdo.project, token)
 
@@ -28,6 +32,9 @@ class AzureDevOpsPublisher:
         logger.info("Fetching Azure DevOps test points")
         points = self.client.get_test_points(self.config.azdo.plan_id, self.config.azdo.suite_id)
         point_by_case_id = _point_by_test_case_id(points)
+        mapped_count = sum(1 for result in results if result.test_case_id in point_by_case_id)
+        unmapped_count = sum(1 for result in results if not result.test_case_id or result.test_case_id not in point_by_case_id)
+        logger.info("Azure DevOps mapping summary: mapped=%s unmapped=%s", mapped_count, unmapped_count)
         missing = sorted(
             {
                 result.test_case_id

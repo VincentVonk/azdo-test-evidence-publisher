@@ -64,3 +64,32 @@ def test_yaml_without_pyyaml_has_clear_error(tmp_path: Path, monkeypatch) -> Non
 
     with pytest.raises(ConfigError, match="YAML config requires PyYAML. Use JSON config or install PyYAML."):
         load_config(config_file)
+
+
+def test_json_config_loads_when_yaml_import_is_unavailable(tmp_path: Path, monkeypatch) -> None:
+    config_file = tmp_path / "publisher.json"
+    config_file.write_text(
+        json.dumps(
+            {
+                "azdo": {
+                    "organization": "https://dev.azure.com/org",
+                    "project": "Project",
+                    "planId": 1,
+                    "suiteId": 2,
+                },
+                "runs": [{"name": "junit", "resultFormat": "junit", "resultFiles": ["*.xml"]}],
+            }
+        ),
+        encoding="utf-8",
+    )
+    real_import = builtins.__import__
+
+    def fake_import(name, *args, **kwargs):
+        if name == "yaml":
+            raise ImportError("missing")
+        return real_import(name, *args, **kwargs)
+
+    monkeypatch.setattr(builtins, "__import__", fake_import)
+
+    config = load_config(config_file)
+    assert config.azdo.project == "Project"
