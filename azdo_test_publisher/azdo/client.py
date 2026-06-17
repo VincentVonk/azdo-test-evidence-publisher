@@ -42,6 +42,7 @@ class AzureDevOpsClient:
             "plan": {"id": str(plan_id)},
             "pointIds": [str(point_id) for point_id in point_ids],
             "automated": True,
+            "state": "InProgress",
         }
         return self._request("POST", "_apis/test/runs", json=payload, params={"api-version": "7.1-preview.3"})
 
@@ -62,6 +63,36 @@ class AzureDevOpsClient:
             params={"api-version": "7.1-preview.6"},
         )
         return response.get("value", [])
+
+    def get_results_by_run(self, run_id: int) -> dict[int, dict[str, Any]]:
+        response = self._request(
+            "GET",
+            f"_apis/test/Runs/{run_id}/results",
+            params={"api-version": "7.1-preview.6"},
+        )
+        mapped: dict[int, dict[str, Any]] = {}
+        for result in response.get("value", []):
+            point_id = _result_point_id(result)
+            result_id = result.get("id")
+            if point_id is None or result_id is None:
+                continue
+            mapped[int(point_id)] = {
+                "result_id": int(result_id),
+                "test_case_id": str((result.get("testCase") or {}).get("id") or result.get("testCaseId") or ""),
+            }
+        return mapped
+
+    def get_testcase_metadata(self, test_case_id: str) -> dict[str, Any]:
+        response = self._request(
+            "GET",
+            f"_apis/wit/workitems/{test_case_id}",
+            params={"api-version": "7.1"},
+        )
+        fields = response.get("fields") or {}
+        return {
+            "rev": response.get("rev") or fields.get("System.Rev"),
+            "title": fields.get("System.Title"),
+        }
 
     def upload_run_attachment(self, run_id: int, name: str, data: bytes, comment: str = "") -> dict[str, Any]:
         return self._upload_attachment(f"_apis/test/Runs/{run_id}/attachments", name, data, comment)
@@ -102,3 +133,9 @@ class AzureDevOpsClient:
         if not response.content:
             return {}
         return response.json()
+
+
+def _result_point_id(result: dict[str, Any]) -> int | None:
+    point = result.get("testPoint") or {}
+    value = point.get("id") or result.get("testPointId") or result.get("pointId")
+    return int(value) if value not in (None, "") else None
