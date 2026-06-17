@@ -1,3 +1,1 @@
-from .collector import EvidenceCollector, EvidenceSummary
-
-__all__ = ["EvidenceCollector", "EvidenceSummary"]
+"""Evidence collection and association helpers."""

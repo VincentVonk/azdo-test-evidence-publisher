@@ -123,8 +123,34 @@ The publisher validates local mappings before Azure DevOps calls. Before creatin
     "uploadResultEvidence": true,
     "uploadResultEvidenceFor": "failed",
     "maxAttachmentSizeMb": 25,
-    "evidenceIncludePatterns": ["**/*"],
-    "evidenceExcludePatterns": [
+    "runLevelEvidenceIncludePatterns": [
+      "**/junit.xml",
+      "**/*.trx",
+      "**/*nunit*.xml",
+      "**/output.xml",
+      "**/log.html",
+      "**/report.html"
+    ],
+    "runLevelEvidenceExcludePatterns": [
+      "**/index.html",
+      "**/snapshot.html",
+      "**/uiMode.html",
+      "**/.last-run.json",
+      "**/*.css",
+      "**/*.js",
+      "**/playwright-report/**"
+    ],
+    "resultLevelEvidenceIncludePatterns": [
+      "**/trace.zip",
+      "**/*.png",
+      "**/*.jpg",
+      "**/*.jpeg",
+      "**/*.webp",
+      "**/*.webm",
+      "**/*.log",
+      "**/*.txt"
+    ],
+    "resultLevelEvidenceExcludePatterns": [
       "**/index.html",
       "**/snapshot.html",
       "**/uiMode.html",
@@ -202,7 +228,30 @@ Evidence logging uses explicit lifecycle terms:
 - matched = eligible files linked to a specific test result
 - uploaded = files actually attached to Azure DevOps
 
-Default evidence filtering excludes common report assets such as `index.html`, `snapshot.html`, `uiMode.html`, `.last-run.json`, CSS, JavaScript, fonts, and Playwright report assets. Result-level evidence such as `trace.zip`, screenshots, and `.webm` videos remains eligible when it passes the configured type and size filters. Override the defaults with `settings.evidenceIncludePatterns` and `settings.evidenceExcludePatterns`.
+Default run-level evidence is limited to high-value summary files:
+
+- `junit.xml`
+- `*.trx`
+- `*nunit*.xml`
+- Robot `output.xml`
+- Robot `log.html`
+- Robot `report.html`
+
+Default result-level evidence includes:
+
+- `trace.zip`
+- screenshots: `.png`, `.jpg`, `.jpeg`, `.webp`
+- videos: `.webm`
+- relevant logs: `.log`, `.txt`
+
+Default exclusions remove common report internals such as generated `index.html`, `snapshot.html`, `uiMode.html`, `.last-run.json`, CSS, JavaScript, fonts, SVG/report images, Playwright report folders, and trace viewer assets.
+
+Override the defaults with:
+
+- `settings.runLevelEvidenceIncludePatterns`
+- `settings.runLevelEvidenceExcludePatterns`
+- `settings.resultLevelEvidenceIncludePatterns`
+- `settings.resultLevelEvidenceExcludePatterns`
 
 ## Framework Examples
 

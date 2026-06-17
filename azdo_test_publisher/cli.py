@@ -97,8 +97,10 @@ def validate_config(
     validation = ValidationResult(config=config)
     collector = EvidenceCollector(
         config.settings.max_attachment_size_mb,
-        config.settings.evidence_include_patterns,
-        config.settings.evidence_exclude_patterns,
+        config.settings.run_level_evidence_include_patterns,
+        config.settings.run_level_evidence_exclude_patterns,
+        config.settings.result_level_evidence_include_patterns,
+        config.settings.result_level_evidence_exclude_patterns,
     )
 
     for run in config.runs:

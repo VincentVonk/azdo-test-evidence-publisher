@@ -31,7 +31,7 @@ def test_evidence_collection_counts_size_skips_and_directories(tmp_path: Path) -
     nested_dir = evidence_dir / "nested"
     nested_dir.mkdir(parents=True)
     eligible = evidence_dir / "TC-1.log"
-    oversized = nested_dir / "TC-1.zip"
+    oversized = nested_dir / "trace.zip"
     unsupported = evidence_dir / "style.css"
     eligible.write_text("ok", encoding="utf-8")
     oversized.write_bytes(b"x" * 2)
@@ -60,7 +60,12 @@ def test_evidence_collection_excludes_default_report_assets(tmp_path: Path) -> N
 
     summary = EvidenceCollector(
         max_attachment_size_mb=25,
-        exclude_patterns=[
+        run_level_exclude_patterns=[
+            "**/index.html",
+            "**/.last-run.json",
+            "**/*.css",
+        ],
+        result_level_exclude_patterns=[
             "**/index.html",
             "**/.last-run.json",
             "**/*.css",
@@ -83,12 +88,60 @@ def test_evidence_collection_include_exclude_override(tmp_path: Path) -> None:
 
     summary = EvidenceCollector(
         max_attachment_size_mb=25,
-        include_patterns=["**/*.zip"],
-        exclude_patterns=[],
+        run_level_include_patterns=[],
+        run_level_exclude_patterns=[],
+        result_level_include_patterns=["**/*.zip"],
+        result_level_exclude_patterns=[],
     ).collect(tmp_path, "evidence")
 
     assert summary.eligible_count == 1
     assert summary.attachments[0].name == "trace.zip"
+
+
+def test_default_evidence_selection_keeps_playwright_trace_and_excludes_report_internals(tmp_path: Path) -> None:
+    root = tmp_path / "evidence"
+    evidence_dir = root / "test-results" / "TC-42"
+    report_dir = root / "playwright-report"
+    evidence_dir.mkdir(parents=True)
+    report_dir.mkdir()
+    trace = evidence_dir / "trace.zip"
+    screenshot = evidence_dir / "screenshot.png"
+    video = evidence_dir / "video.webm"
+    report_index = report_dir / "index.html"
+    report_js = report_dir / "bundle.js"
+    report_svg = report_dir / "icon.svg"
+    trace.write_text("trace", encoding="utf-8")
+    screenshot.write_text("png", encoding="utf-8")
+    video.write_text("webm", encoding="utf-8")
+    report_index.write_text("html", encoding="utf-8")
+    report_js.write_text("js", encoding="utf-8")
+    report_svg.write_text("svg", encoding="utf-8")
+
+    summary = EvidenceCollector(max_attachment_size_mb=25).collect(tmp_path, "evidence")
+
+    names = {attachment.name for attachment in summary.attachments}
+    assert {"trace.zip", "screenshot.png", "video.webm"}.issubset(names)
+    assert "index.html" not in names
+    assert "bundle.js" not in names
+    assert "icon.svg" not in names
+
+
+def test_default_evidence_selection_keeps_robot_summary_files_as_run_level(tmp_path: Path) -> None:
+    evidence_dir = tmp_path / "robot-results"
+    evidence_dir.mkdir()
+    output = evidence_dir / "output.xml"
+    log = evidence_dir / "log.html"
+    report = evidence_dir / "report.html"
+    output.write_text("xml", encoding="utf-8")
+    log.write_text("html", encoding="utf-8")
+    report.write_text("html", encoding="utf-8")
+
+    summary = EvidenceCollector(max_attachment_size_mb=25).collect(tmp_path, "robot-results")
+
+    by_name = {attachment.name: attachment for attachment in summary.attachments}
+    assert by_name["output.xml"].attachment_level == AttachmentLevel.RUN
+    assert by_name["log.html"].attachment_level == AttachmentLevel.RUN
+    assert by_name["report.html"].attachment_level == AttachmentLevel.RUN
 
 
 def test_evidence_association_by_tc_id_in_filename() -> None:

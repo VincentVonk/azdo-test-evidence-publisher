@@ -9,6 +9,7 @@ import re
 from typing import Callable
 
 from azdo_test_publisher.models import Attachment, AttachmentLevel, Outcome, TestResult
+from .patterns import DEFAULT_EXCLUDE_PATTERNS, DEFAULT_RESULT_LEVEL_INCLUDE_PATTERNS, DEFAULT_RUN_LEVEL_INCLUDE_PATTERNS
 
 logger = logging.getLogger(__name__)
 
@@ -26,23 +27,6 @@ SUPPORTED_EXTENSIONS = {
     ".zip",
     ".webm",
 }
-
-DEFAULT_INCLUDE_PATTERNS = ["**/*"]
-DEFAULT_EXCLUDE_PATTERNS = [
-    "**/index.html",
-    "**/snapshot.html",
-    "**/uiMode.html",
-    "**/.last-run.json",
-    "**/*.css",
-    "**/*.js",
-    "**/*.mjs",
-    "**/*.map",
-    "**/*.woff",
-    "**/*.woff2",
-    "**/*.ttf",
-    "**/*.otf",
-    "**/playwright-report/**",
-]
 
 EvidenceMatcher = Callable[[Attachment, TestResult], bool]
 
@@ -81,12 +65,32 @@ class EvidenceCollector:
     def __init__(
         self,
         max_attachment_size_mb: int = 25,
-        include_patterns: list[str] | None = None,
-        exclude_patterns: list[str] | None = None,
+        run_level_include_patterns: list[str] | None = None,
+        run_level_exclude_patterns: list[str] | None = None,
+        result_level_include_patterns: list[str] | None = None,
+        result_level_exclude_patterns: list[str] | None = None,
     ) -> None:
         self.max_bytes = max_attachment_size_mb * 1024 * 1024
-        self.include_patterns = include_patterns if include_patterns is not None else DEFAULT_INCLUDE_PATTERNS
-        self.exclude_patterns = exclude_patterns if exclude_patterns is not None else DEFAULT_EXCLUDE_PATTERNS
+        self.run_level_include_patterns = (
+            run_level_include_patterns
+            if run_level_include_patterns is not None
+            else DEFAULT_RUN_LEVEL_INCLUDE_PATTERNS
+        )
+        self.run_level_exclude_patterns = (
+            run_level_exclude_patterns
+            if run_level_exclude_patterns is not None
+            else DEFAULT_EXCLUDE_PATTERNS
+        )
+        self.result_level_include_patterns = (
+            result_level_include_patterns
+            if result_level_include_patterns is not None
+            else DEFAULT_RESULT_LEVEL_INCLUDE_PATTERNS
+        )
+        self.result_level_exclude_patterns = (
+            result_level_exclude_patterns
+            if result_level_exclude_patterns is not None
+            else DEFAULT_EXCLUDE_PATTERNS
+        )
 
     def collect(self, base_dir: Path, evidence_folder: str | None) -> EvidenceSummary:
         summary = EvidenceSummary()
@@ -105,7 +109,8 @@ class EvidenceCollector:
                         files.append(path)
         for path in sorted(set(file.resolve() for file in files)):
             summary.scanned_count += 1
-            if not self._included(path) or self._excluded(path):
+            attachment_level = self._candidate_level(path)
+            if attachment_level is None:
                 summary.skipped_type.append(path)
                 logger.debug("Evidence skipped by include/exclude pattern: %s", path)
                 continue
@@ -119,24 +124,28 @@ class EvidenceCollector:
                 logger.debug("Evidence skipped due to size limit: %s", path)
                 continue
             mime_type = guess_type(path.name)[0] or "application/octet-stream"
+            logger.debug("Evidence eligible: path=%s level=%s size=%s", path, attachment_level.value, size)
             summary.attachments.append(
                 Attachment(
                     path=path,
                     name=path.name,
                     size_bytes=size,
                     mime_type=mime_type,
-                    attachment_level=AttachmentLevel.RUN,
+                    attachment_level=attachment_level,
                 )
             )
         return summary
 
-    def _included(self, path: Path) -> bool:
-        value = _path_for_matching(path)
-        return any(fnmatch(value, pattern) or fnmatch(path.name, pattern) for pattern in self.include_patterns)
+    def _candidate_level(self, path: Path) -> AttachmentLevel | None:
+        if self._matches(path, self.run_level_include_patterns) and not self._matches(path, self.run_level_exclude_patterns):
+            return AttachmentLevel.RUN
+        if self._matches(path, self.result_level_include_patterns) and not self._matches(path, self.result_level_exclude_patterns):
+            return AttachmentLevel.RESULT
+        return None
 
-    def _excluded(self, path: Path) -> bool:
+    def _matches(self, path: Path, patterns: list[str]) -> bool:
         value = _path_for_matching(path)
-        return any(fnmatch(value, pattern) or fnmatch(path.name, pattern) for pattern in self.exclude_patterns)
+        return any(fnmatch(value, pattern) or fnmatch(path.name, pattern) for pattern in patterns)
 
 
 @dataclass(slots=True)
@@ -256,7 +265,9 @@ def associate_evidence_with_summary(
             attachment.attachment_level = AttachmentLevel.RESULT
             attachment.related_test_case_id = matched_result.test_case_id
     matching_summary.result_level_files_matched = sum(
-        1 for attachment in associated if attachment.attachment_level == AttachmentLevel.RESULT
+        1
+        for attachment in associated
+        if attachment.attachment_level == AttachmentLevel.RESULT and attachment.related_test_case_id
     )
     matching_summary.run_level_files_selected = sum(
         1 for attachment in associated if attachment.attachment_level == AttachmentLevel.RUN

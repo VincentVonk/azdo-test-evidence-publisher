@@ -7,6 +7,7 @@ from typing import Any
 
 from dotenv import load_dotenv
 
+from .evidence.patterns import DEFAULT_EXCLUDE_PATTERNS, DEFAULT_RESULT_LEVEL_INCLUDE_PATTERNS, DEFAULT_RUN_LEVEL_INCLUDE_PATTERNS
 from .models import AzdoConfig, DuplicateStrategy, PublisherConfig, RunConfig, Settings
 
 
@@ -99,25 +100,28 @@ def load_config(path: str | Path) -> PublisherConfig:
             upload_result_evidence=bool(settings_raw.get("uploadResultEvidence", True)),
             upload_result_evidence_for=str(settings_raw.get("uploadResultEvidenceFor", "failed")).lower(),
             max_attachment_size_mb=int(settings_raw.get("maxAttachmentSizeMb", 25)),
-            evidence_include_patterns=list(settings_raw.get("evidenceIncludePatterns", ["**/*"])),
-            evidence_exclude_patterns=list(
+            run_level_evidence_include_patterns=list(
                 settings_raw.get(
-                    "evidenceExcludePatterns",
-                    [
-                        "**/index.html",
-                        "**/snapshot.html",
-                        "**/uiMode.html",
-                        "**/.last-run.json",
-                        "**/*.css",
-                        "**/*.js",
-                        "**/*.mjs",
-                        "**/*.map",
-                        "**/*.woff",
-                        "**/*.woff2",
-                        "**/*.ttf",
-                        "**/*.otf",
-                        "**/playwright-report/**",
-                    ],
+                    "runLevelEvidenceIncludePatterns",
+                    settings_raw.get("evidenceIncludePatterns", DEFAULT_RUN_LEVEL_INCLUDE_PATTERNS),
+                )
+            ),
+            run_level_evidence_exclude_patterns=list(
+                settings_raw.get(
+                    "runLevelEvidenceExcludePatterns",
+                    settings_raw.get("evidenceExcludePatterns", DEFAULT_EXCLUDE_PATTERNS),
+                )
+            ),
+            result_level_evidence_include_patterns=list(
+                settings_raw.get(
+                    "resultLevelEvidenceIncludePatterns",
+                    settings_raw.get("evidenceIncludePatterns", DEFAULT_RESULT_LEVEL_INCLUDE_PATTERNS),
+                )
+            ),
+            result_level_evidence_exclude_patterns=list(
+                settings_raw.get(
+                    "resultLevelEvidenceExcludePatterns",
+                    settings_raw.get("evidenceExcludePatterns", DEFAULT_EXCLUDE_PATTERNS),
                 )
             ),
         ),

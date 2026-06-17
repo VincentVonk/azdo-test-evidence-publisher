@@ -4,6 +4,12 @@ from dataclasses import dataclass, field
 from enum import StrEnum
 from pathlib import Path
 
+from .evidence.patterns import (
+    DEFAULT_EXCLUDE_PATTERNS,
+    DEFAULT_RESULT_LEVEL_INCLUDE_PATTERNS,
+    DEFAULT_RUN_LEVEL_INCLUDE_PATTERNS,
+)
+
 
 class Outcome(StrEnum):
     PASSED = "Passed"
@@ -77,24 +83,14 @@ class Settings:
     upload_result_evidence: bool = True
     upload_result_evidence_for: str = "failed"
     max_attachment_size_mb: int = 25
-    evidence_include_patterns: list[str] = field(default_factory=lambda: ["**/*"])
-    evidence_exclude_patterns: list[str] = field(
-        default_factory=lambda: [
-            "**/index.html",
-            "**/snapshot.html",
-            "**/uiMode.html",
-            "**/.last-run.json",
-            "**/*.css",
-            "**/*.js",
-            "**/*.mjs",
-            "**/*.map",
-            "**/*.woff",
-            "**/*.woff2",
-            "**/*.ttf",
-            "**/*.otf",
-            "**/playwright-report/**",
-        ]
+    run_level_evidence_include_patterns: list[str] = field(
+        default_factory=lambda: DEFAULT_RUN_LEVEL_INCLUDE_PATTERNS.copy()
     )
+    run_level_evidence_exclude_patterns: list[str] = field(default_factory=lambda: DEFAULT_EXCLUDE_PATTERNS.copy())
+    result_level_evidence_include_patterns: list[str] = field(
+        default_factory=lambda: DEFAULT_RESULT_LEVEL_INCLUDE_PATTERNS.copy()
+    )
+    result_level_evidence_exclude_patterns: list[str] = field(default_factory=lambda: DEFAULT_EXCLUDE_PATTERNS.copy())
 
 
 @dataclass(slots=True)
