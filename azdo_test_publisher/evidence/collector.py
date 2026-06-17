@@ -1,11 +1,15 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+import logging
 from mimetypes import guess_type
 from pathlib import Path
 import re
+from typing import Callable
 
 from azdo_test_publisher.models import Attachment, AttachmentLevel, Outcome, TestResult
+
+logger = logging.getLogger(__name__)
 
 
 SUPPORTED_EXTENSIONS = {
@@ -21,7 +25,8 @@ SUPPORTED_EXTENSIONS = {
     ".zip",
     ".webm",
 }
-ROBOT_RUN_LEVEL = {"output.xml", "log.html", "report.html"}
+
+EvidenceMatcher = Callable[[Attachment, TestResult], bool]
 
 
 @dataclass(slots=True)
@@ -67,43 +72,128 @@ class EvidenceCollector:
         return summary
 
 
+@dataclass(slots=True)
+class EvidenceAssociation:
+    result: TestResult
+    evidence_files: list[Attachment] = field(default_factory=list)
+
+
+class EvidenceAssociator:
+    def __init__(
+        self,
+        tc_id_pattern: str = r"TC-(\d+)",
+        custom_matchers: list[EvidenceMatcher] | None = None,
+    ) -> None:
+        self.tc_id_regex = re.compile(tc_id_pattern, re.IGNORECASE)
+        self.custom_matchers = custom_matchers or []
+
+    def associate(
+        self,
+        results: list[TestResult],
+        attachments: list[Attachment],
+    ) -> dict[str, EvidenceAssociation]:
+        associations = {
+            result.test_case_id: EvidenceAssociation(result=result)
+            for result in results
+            if result.test_case_id
+        }
+        seen_by_result: dict[str, set[Path]] = {test_case_id: set() for test_case_id in associations}
+        unique_attachments = _deduplicate_attachments(attachments)
+
+        for result in results:
+            if not result.test_case_id:
+                continue
+            for attachment in unique_attachments:
+                strategy = self._match_strategy(attachment, result)
+                if not strategy:
+                    continue
+                resolved_path = attachment.path.resolve()
+                if resolved_path in seen_by_result[result.test_case_id]:
+                    continue
+                associations[result.test_case_id].evidence_files.append(attachment)
+                seen_by_result[result.test_case_id].add(resolved_path)
+                logger.info(
+                    "Matched evidence: tcId=%s file=%s strategy=%s",
+                    result.test_case_id,
+                    attachment.name,
+                    strategy,
+                )
+
+        for test_case_id, association in associations.items():
+            if not association.evidence_files:
+                logger.warning("No evidence matched: tcId=%s", test_case_id)
+
+        return associations
+
+    def _match_strategy(self, attachment: Attachment, result: TestResult) -> str | None:
+        if self._matches_tc_id(attachment, result.test_case_id):
+            return "tcId"
+        if self._matches_test_name(attachment, result):
+            return "testName"
+        for index, matcher in enumerate(self.custom_matchers, start=1):
+            if matcher(attachment, result):
+                return f"custom:{index}"
+        return None
+
+    def _matches_tc_id(self, attachment: Attachment, test_case_id: str | None) -> bool:
+        if not test_case_id:
+            return False
+        for value in _path_search_values(attachment.path):
+            ids = [match.group(1) if match.groups() else match.group(0) for match in self.tc_id_regex.finditer(value)]
+            if test_case_id in ids:
+                return True
+        return False
+
+    def _matches_test_name(self, attachment: Attachment, result: TestResult) -> bool:
+        normalized_name = _normalize(result.name)
+        if not normalized_name:
+            return False
+        return normalized_name in _normalize(str(attachment.path))
+
+
 def associate_evidence(
     attachments: list[Attachment],
     results: list[TestResult],
     upload_result_evidence_for: str = "failed",
+    tc_id_pattern: str = r"TC-(\d+)",
+    custom_matchers: list[EvidenceMatcher] | None = None,
 ) -> list[Attachment]:
     by_id = {result.test_case_id: result for result in results if result.test_case_id}
     result_scope = upload_result_evidence_for.lower()
-    associated: list[Attachment] = []
-    for attachment in attachments:
-        if attachment.name.lower() in ROBOT_RUN_LEVEL:
-            associated.append(attachment)
+    associator = EvidenceAssociator(tc_id_pattern=tc_id_pattern, custom_matchers=custom_matchers)
+    associations = associator.associate(results, attachments)
+    associated = _deduplicate_attachments(attachments)
+    attachment_by_path = {attachment.path.resolve(): attachment for attachment in associated}
+    for test_case_id, association in associations.items():
+        matched_result = by_id.get(test_case_id)
+        if not matched_result or not _outcome_allowed(matched_result, result_scope):
             continue
-        text = str(attachment.path).lower()
-        matched_id = _match_by_tc_id(text, by_id.keys()) or _match_by_title(text, results)
-        matched_result = by_id.get(matched_id) if matched_id else None
-        if matched_result and _outcome_allowed(matched_result, result_scope):
+        for evidence_file in association.evidence_files:
+            attachment = attachment_by_path[evidence_file.path.resolve()]
             attachment.attachment_level = AttachmentLevel.RESULT
             attachment.related_test_case_id = matched_result.test_case_id
-        associated.append(attachment)
     return associated
 
 
-def _match_by_tc_id(text: str, test_case_ids: object) -> str | None:
-    for test_case_id in test_case_ids:
-        if test_case_id and re.search(rf"(tc[-_ ]?)?{re.escape(str(test_case_id).lower())}", text):
-            return str(test_case_id)
-    return None
-
-
-def _match_by_title(text: str, results: list[TestResult]) -> str | None:
-    for result in results:
-        if not result.test_case_id:
+def _deduplicate_attachments(attachments: list[Attachment]) -> list[Attachment]:
+    seen: set[Path] = set()
+    unique: list[Attachment] = []
+    for attachment in attachments:
+        path = attachment.path.resolve()
+        if path in seen:
             continue
-        fragments = [fragment for fragment in re.split(r"[^a-z0-9]+", result.name.lower()) if len(fragment) >= 4]
-        if fragments and all(fragment in text for fragment in fragments[:4]):
-            return result.test_case_id
-    return None
+        seen.add(path)
+        unique.append(attachment)
+    return unique
+
+
+def _path_search_values(path: Path) -> list[str]:
+    resolved = path.resolve()
+    return [resolved.name, *[parent.name for parent in resolved.parents], str(resolved)]
+
+
+def _normalize(value: str) -> str:
+    return "".join(re.findall(r"[a-z0-9]+", value.lower()))
 
 
 def _outcome_allowed(result: TestResult, result_scope: str) -> bool:

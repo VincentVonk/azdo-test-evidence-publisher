@@ -95,6 +95,7 @@ def validate_config(config_path: str | Path, enforce: bool = True) -> Validation
         validation.evidence.attachments,
         validation.results,
         config.settings.upload_result_evidence_for,
+        config.settings.mapping_pattern,
     )
     summary = summarize_mapping(validation.results)
     validation.duplicate_details = duplicate_results_by_test_case_id(validation.results)
