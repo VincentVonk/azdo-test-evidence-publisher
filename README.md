@@ -22,50 +22,64 @@ python -m pip install -e ".[dev]"
 Validate without calling Azure DevOps:
 
 ```bash
-python -m azdo_test_publisher validate --config examples/publisher.yml
+python -m azdo_test_publisher validate --config examples/publisher.json
 ```
 
 Publish:
 
 ```bash
 export AZDO_TOKEN="your-pat"
-python -m azdo_test_publisher publish --config publisher.yml
+python -m azdo_test_publisher publish --config publisher.json
 ```
 
 PowerShell:
 
 ```powershell
 $env:AZDO_TOKEN = "your-pat"
-python -m azdo_test_publisher publish --config publisher.yml
+python -m azdo_test_publisher publish --config publisher.json
 ```
 
 ## Configuration
 
-```yaml
-azdo:
-  organization: https://dev.azure.com/my-org
-  project: MyProject
-  planId: 123
-  suiteId: 456
-  tokenEnvVar: AZDO_TOKEN
+JSON is the default config format and does not require optional dependencies.
 
-settings:
-  mappingPattern: "TC-(\\d+)"
-  allowUnmapped: false
-  allowMultipleTestCaseIds: false
-  duplicateStrategy: fail
-  uploadRunEvidence: true
-  uploadResultEvidence: true
-  uploadResultEvidenceFor: failed
-  maxAttachmentSizeMb: 25
-
-runs:
-  - name: backend
-    resultFormat: junit
-    resultFiles:
-      - build/test-results/**/*.xml
-    evidenceFolder: build/reports/tests
+```json
+{
+  "azdo": {
+    "organization": "https://dev.azure.com/my-org",
+    "project": "MyProject",
+    "planId": 123,
+    "suiteId": 456,
+    "tokenEnvVar": "AZDO_TOKEN"
+  },
+  "settings": {
+    "mappingPattern": "TC-(\\d+)",
+    "allowUnmapped": false,
+    "allowMultipleTestCaseIds": false,
+    "duplicateStrategy": "fail",
+    "uploadRunEvidence": true,
+    "uploadResultEvidence": true,
+    "uploadResultEvidenceFor": "failed",
+    "maxAttachmentSizeMb": 25
+  },
+  "runs": [
+    {
+      "name": "backend",
+      "resultFormat": "junit",
+      "resultFiles": ["build/test-results/**/*.xml"],
+      "evidenceFolder": "build/reports/tests"
+    }
+  ]
+}
 ```
+
+YAML remains backward compatible when PyYAML is installed. Install optional YAML support with:
+
+```bash
+python -m pip install "azdo-test-evidence-publisher[yaml]"
+```
+
+If PyYAML is unavailable, use a `.json` config.
 
 Environment fallback is supported for `AZDO_ORG`, `AZDO_PROJECT`, `AZDO_PLAN_ID`, `AZDO_SUITE_ID`, `AZDO_TOKEN`, and `AZDO_PAT`.
 
@@ -111,7 +125,7 @@ Use `System.AccessToken` by mapping it to `AZDO_TOKEN`:
 ```yaml
 - template: templates/azure-pipelines/azdo-test-evidence-publisher.yml
   parameters:
-    configPath: publisher.yml
+    configPath: publisher.json
 ```
 
 The pipeline job must allow scripts to access the OAuth token, and the build service identity must have permission to update the configured Test Plan and Suite.
@@ -122,35 +136,35 @@ Robot:
 
 ```bash
 robot --output results/output.xml --log results/log.html --report results/report.html tests
-python -m azdo_test_publisher publish --config examples/robot.publisher.yml
+python -m azdo_test_publisher publish --config examples/robot.publisher.json
 ```
 
 Playwright:
 
 ```bash
 npx playwright test --reporter=junit
-python -m azdo_test_publisher publish --config examples/playwright.publisher.yml
+python -m azdo_test_publisher publish --config examples/playwright.publisher.json
 ```
 
 Java/Kotlin:
 
 ```bash
 ./gradlew test
-python -m azdo_test_publisher publish --config publisher.yml
+python -m azdo_test_publisher publish --config publisher.json
 ```
 
 .NET:
 
 ```bash
 dotnet test --logger trx
-python -m azdo_test_publisher publish --config examples/dotnet.publisher.yml
+python -m azdo_test_publisher publish --config examples/dotnet.publisher.json
 ```
 
 JMeter:
 
 ```bash
 jmeter -n -t test-plan.jmx -l results.jtl -e -o target/jmeter-results
-python -m azdo_test_publisher publish --config examples/jmeter.publisher.yml
+python -m azdo_test_publisher publish --config examples/jmeter.publisher.json
 ```
 
 ## Troubleshooting

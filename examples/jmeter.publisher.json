@@ -1,0 +1,17 @@
+{
+  "azdo": {
+    "tokenEnvVar": "AZDO_TOKEN"
+  },
+  "settings": {
+    "mappingPattern": "TC-(\\d+)",
+    "duplicateStrategy": "fail"
+  },
+  "runs": [
+    {
+      "name": "jmeter",
+      "resultFormat": "junit",
+      "resultFiles": ["target/jmeter-results/**/*.xml"],
+      "evidenceFolder": "target/jmeter-results"
+    }
+  ]
+}

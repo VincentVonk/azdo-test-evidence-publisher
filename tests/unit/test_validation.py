@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 import pytest
@@ -9,7 +10,7 @@ from azdo_test_publisher.mapping import MappingError
 
 
 def test_validation_uses_fixtures_without_azdo_calls() -> None:
-    config = Path(__file__).parents[2] / "examples" / "publisher.yml"
+    config = Path(__file__).parents[2] / "examples" / "publisher.json"
     validation = validate_config(config)
     assert len(validation.result_files) == 4
     assert len(validation.results) == 9
@@ -28,21 +29,20 @@ def test_validation_fails_when_duplicate_strategy_fail(tmp_path: Path) -> None:
 """,
         encoding="utf-8",
     )
-    config_file = tmp_path / "publisher.yml"
+    config_file = tmp_path / "publisher.json"
     config_file.write_text(
-        """
-azdo:
-  organization: https://dev.azure.com/org
-  project: Project
-  planId: 1
-  suiteId: 2
-settings:
-  duplicateStrategy: fail
-runs:
-  - name: junit
-    resultFormat: junit
-    resultFiles: ["results.xml"]
-""",
+        json.dumps(
+            {
+                "azdo": {
+                    "organization": "https://dev.azure.com/org",
+                    "project": "Project",
+                    "planId": 1,
+                    "suiteId": 2,
+                },
+                "settings": {"duplicateStrategy": "fail"},
+                "runs": [{"name": "junit", "resultFormat": "junit", "resultFiles": ["results.xml"]}],
+            }
+        ),
         encoding="utf-8",
     )
 

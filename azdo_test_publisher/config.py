@@ -1,10 +1,10 @@
 from __future__ import annotations
 
+import json
 import os
 from pathlib import Path
 from typing import Any
 
-import yaml
 from dotenv import load_dotenv
 
 from .models import AzdoConfig, DuplicateStrategy, PublisherConfig, RunConfig, Settings
@@ -34,8 +34,7 @@ def load_config(path: str | Path) -> PublisherConfig:
     if not config_path.exists():
         raise ConfigError(f"Config file not found: {config_path}")
 
-    with config_path.open("r", encoding="utf-8") as handle:
-        raw = yaml.safe_load(handle) or {}
+    raw = _load_raw_config(config_path)
 
     azdo_raw = raw.get("azdo") or {}
     settings_raw = raw.get("settings") or {}
@@ -116,3 +115,21 @@ def resolve_token(config: PublisherConfig) -> str | None:
         if token:
             return token
     return None
+
+
+def _load_raw_config(config_path: Path) -> dict[str, Any]:
+    suffix = config_path.suffix.lower()
+    if suffix == ".json":
+        with config_path.open("r", encoding="utf-8") as handle:
+            try:
+                return json.load(handle) or {}
+            except json.JSONDecodeError as exc:
+                raise ConfigError(f"Invalid JSON config: {exc}") from exc
+    if suffix in {".yml", ".yaml"}:
+        try:
+            import yaml  # type: ignore[import-untyped]
+        except ImportError as exc:
+            raise ConfigError("YAML config requires PyYAML. Use JSON config or install PyYAML.") from exc
+        with config_path.open("r", encoding="utf-8") as handle:
+            return yaml.safe_load(handle) or {}
+    raise ConfigError("Unsupported config format. Use .json, .yml, or .yaml.")

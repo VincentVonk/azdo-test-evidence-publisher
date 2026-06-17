@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import json
+
 import pytest
 
 from azdo_test_publisher.azdo.publisher import AzureDevOpsPublisher
@@ -27,19 +29,19 @@ class FakeClient:
 
 
 def test_publish_fails_for_missing_test_point(tmp_path) -> None:
-    config_file = tmp_path / "publisher.yml"
+    config_file = tmp_path / "publisher.json"
     config_file.write_text(
-        """
-azdo:
-  organization: https://dev.azure.com/org
-  project: Project
-  planId: 1
-  suiteId: 2
-runs:
-  - name: junit
-    resultFormat: junit
-    resultFiles: ["*.xml"]
-""",
+        json.dumps(
+            {
+                "azdo": {
+                    "organization": "https://dev.azure.com/org",
+                    "project": "Project",
+                    "planId": 1,
+                    "suiteId": 2,
+                },
+                "runs": [{"name": "junit", "resultFormat": "junit", "resultFiles": ["*.xml"]}],
+            }
+        ),
         encoding="utf-8",
     )
     publisher = AzureDevOpsPublisher(load_config(config_file), "secret")
@@ -50,19 +52,19 @@ runs:
 
 
 def test_publish_maps_result_to_point(tmp_path) -> None:
-    config_file = tmp_path / "publisher.yml"
+    config_file = tmp_path / "publisher.json"
     config_file.write_text(
-        """
-azdo:
-  organization: https://dev.azure.com/org
-  project: Project
-  planId: 1
-  suiteId: 2
-runs:
-  - name: junit
-    resultFormat: junit
-    resultFiles: ["*.xml"]
-""",
+        json.dumps(
+            {
+                "azdo": {
+                    "organization": "https://dev.azure.com/org",
+                    "project": "Project",
+                    "planId": 1,
+                    "suiteId": 2,
+                },
+                "runs": [{"name": "junit", "resultFormat": "junit", "resultFiles": ["*.xml"]}],
+            }
+        ),
         encoding="utf-8",
     )
     publisher = AzureDevOpsPublisher(load_config(config_file), "secret")
@@ -71,21 +73,20 @@ runs:
 
 
 def test_publish_does_not_call_azdo_when_duplicates_fail(tmp_path) -> None:
-    config_file = tmp_path / "publisher.yml"
+    config_file = tmp_path / "publisher.json"
     config_file.write_text(
-        """
-azdo:
-  organization: https://dev.azure.com/org
-  project: Project
-  planId: 1
-  suiteId: 2
-settings:
-  duplicateStrategy: fail
-runs:
-  - name: junit
-    resultFormat: junit
-    resultFiles: ["*.xml"]
-""",
+        json.dumps(
+            {
+                "azdo": {
+                    "organization": "https://dev.azure.com/org",
+                    "project": "Project",
+                    "planId": 1,
+                    "suiteId": 2,
+                },
+                "settings": {"duplicateStrategy": "fail"},
+                "runs": [{"name": "junit", "resultFormat": "junit", "resultFiles": ["*.xml"]}],
+            }
+        ),
         encoding="utf-8",
     )
     publisher = AzureDevOpsPublisher(load_config(config_file), "secret")
@@ -105,21 +106,20 @@ runs:
 
 
 def test_publish_aggregates_duplicates_with_worst_outcome(tmp_path) -> None:
-    config_file = tmp_path / "publisher.yml"
+    config_file = tmp_path / "publisher.json"
     config_file.write_text(
-        """
-azdo:
-  organization: https://dev.azure.com/org
-  project: Project
-  planId: 1
-  suiteId: 2
-settings:
-  duplicateStrategy: worst_outcome_wins
-runs:
-  - name: junit
-    resultFormat: junit
-    resultFiles: ["*.xml"]
-""",
+        json.dumps(
+            {
+                "azdo": {
+                    "organization": "https://dev.azure.com/org",
+                    "project": "Project",
+                    "planId": 1,
+                    "suiteId": 2,
+                },
+                "settings": {"duplicateStrategy": "worst_outcome_wins"},
+                "runs": [{"name": "junit", "resultFormat": "junit", "resultFiles": ["*.xml"]}],
+            }
+        ),
         encoding="utf-8",
     )
 

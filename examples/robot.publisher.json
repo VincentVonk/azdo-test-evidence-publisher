@@ -1,0 +1,18 @@
+{
+  "azdo": {
+    "tokenEnvVar": "AZDO_TOKEN"
+  },
+  "settings": {
+    "mappingPattern": "TC-(\\d+)",
+    "allowUnmapped": false,
+    "duplicateStrategy": "fail"
+  },
+  "runs": [
+    {
+      "name": "robot",
+      "resultFormat": "robot",
+      "resultFiles": ["results/output.xml"],
+      "evidenceFolder": "results"
+    }
+  ]
+}

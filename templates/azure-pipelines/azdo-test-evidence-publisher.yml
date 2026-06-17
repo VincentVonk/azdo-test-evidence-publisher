@@ -1,5 +1,5 @@
 parameters:
-  configPath: publisher.yml
+  configPath: publisher.json
   pythonVersion: "3.11"
   publishCommand: publish
 
@@ -26,4 +26,4 @@ steps:
 # Required:
 # - Enable "Allow scripts to access the OAuth token" for the pipeline job.
 # - Grant the build service identity permission to read/update the target Test Plan and Suite.
-# - Define AZDO_ORG, AZDO_PROJECT, AZDO_PLAN_ID, and AZDO_SUITE_ID or provide them in publisher.yml.
+# - Define AZDO_ORG, AZDO_PROJECT, AZDO_PLAN_ID, and AZDO_SUITE_ID or provide them in publisher.json.
