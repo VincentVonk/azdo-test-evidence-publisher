@@ -14,13 +14,14 @@ logger = logging.getLogger(__name__)
 
 
 class AzureDevOpsPublisher:
-    def __init__(self, config: PublisherConfig, token: str) -> None:
+    def __init__(self, config: PublisherConfig, token: str, detailed_logging: bool = False) -> None:
         if not token:
             raise ValueError("Azure DevOps token is required")
         if config.azdo.plan_id <= 0 or config.azdo.suite_id <= 0:
             raise ValueError("Azure DevOps planId and suiteId must be positive integers")
         self.config = config
         self.client = AzureDevOpsClient(config.azdo.organization, config.azdo.project, token)
+        self.detailed_logging = detailed_logging
 
     def publish(self, results: list[TestResult], attachments: list[Attachment]) -> None:
         results, duplicates = resolve_duplicate_results(results, self.config.settings.duplicate_strategy)
@@ -30,12 +31,12 @@ class AzureDevOpsPublisher:
                 ", ".join(f"TC-{test_case_id} ({len(items)} executions)" for test_case_id, items in duplicates.items()),
             )
 
-        logger.info("Fetching Azure DevOps test points")
+        if self.detailed_logging:
+            logger.info("Fetching Azure DevOps test points")
         points = self.client.get_test_points(self.config.azdo.plan_id, self.config.azdo.suite_id)
         point_by_case_id = _point_by_test_case_id(points)
         mapped_count = sum(1 for result in results if result.test_case_id in point_by_case_id)
         unmapped_count = sum(1 for result in results if not result.test_case_id or result.test_case_id not in point_by_case_id)
-        logger.info("Azure DevOps mapping summary: mapped=%s unmapped=%s", mapped_count, unmapped_count)
         missing = sorted(
             {
                 result.test_case_id
@@ -65,7 +66,9 @@ class AzureDevOpsPublisher:
         run_name = f"Automated evidence run {datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M:%S UTC')}"
         run = self.client.create_test_run(run_name, self.config.azdo.plan_id, point_ids)
         run_id = int(run["id"])
-        logger.info("Created Azure DevOps test run %s", run_id)
+        logger.info("Azure DevOps: run=%s mapped=%s unmapped=%s", run_id, mapped_count, unmapped_count)
+        if self.detailed_logging:
+            logger.info("Created Azure DevOps test run %s", run_id)
 
         run_results_by_point_id = self.client.get_results_by_run(run_id)
         _validate_existing_run_results(publishable, point_by_case_id, run_results_by_point_id)
@@ -89,9 +92,10 @@ class AzureDevOpsPublisher:
                 if attachment.attachment_level == AttachmentLevel.RUN:
                     self.client.upload_run_attachment(run_id, attachment.name, attachment.path.read_bytes())
                     run_uploads += 1
-                    logger.info("Uploaded run attachment")
-                    logger.info("  file=%s", attachment.name)
-                    logger.info("  size=%s", _format_size(attachment.size_bytes))
+                    if self.detailed_logging:
+                        logger.info("Uploaded run attachment")
+                        logger.info("  file=%s", attachment.name)
+                        logger.info("  size=%s", _format_size(attachment.size_bytes))
         else:
             skipped_attachments += sum(1 for attachment in attachments if attachment.attachment_level == AttachmentLevel.RUN)
 
@@ -103,25 +107,35 @@ class AzureDevOpsPublisher:
                 if result_id:
                     self.client.upload_result_attachment(run_id, result_id, attachment.name, attachment.path.read_bytes())
                     result_uploads += 1
-                    logger.info("Uploaded result attachment")
-                    logger.info("  tcId=%s", attachment.related_test_case_id)
-                    logger.info("  resultId=%s", result_id)
-                    logger.info("  file=%s", attachment.name)
-                    logger.info("  size=%s", _format_size(attachment.size_bytes))
+                    if self.detailed_logging:
+                        logger.info("Uploaded result attachment")
+                        logger.info("  tcId=%s", attachment.related_test_case_id)
+                        logger.info("  resultId=%s", result_id)
+                        logger.info("  file=%s", attachment.name)
+                        logger.info("  size=%s", _format_size(attachment.size_bytes))
                 else:
                     skipped_attachments += 1
         else:
             skipped_attachments += sum(1 for attachment in attachments if attachment.attachment_level == AttachmentLevel.RESULT)
 
-        logger.info("Evidence upload summary")
-        logger.info("  Result-level attachments uploaded: %s", result_uploads)
-        logger.info("  Run-level attachments uploaded: %s", run_uploads)
-        logger.info("  Attachments skipped: %s", skipped_attachments)
+        logger.info(
+            "Evidence: eligible=%s matched=%s uploaded=%s",
+            len(attachments),
+            sum(1 for attachment in attachments if attachment.attachment_level == AttachmentLevel.RESULT),
+            result_uploads + run_uploads,
+        )
+        if self.detailed_logging:
+            logger.info("Evidence upload summary")
+            logger.info("  Result-level attachments uploaded: %s", result_uploads)
+            logger.info("  Run-level attachments uploaded: %s", run_uploads)
+            logger.info("  Attachments skipped: %s", skipped_attachments)
         if attachments and result_uploads + run_uploads == 0:
             logger.warning("Evidence files were eligible but no attachments were uploaded.")
 
         self.client.complete_test_run(run_id)
-        logger.info("Completed Azure DevOps test run %s", run_id)
+        logger.info("Publish completed successfully")
+        if self.detailed_logging:
+            logger.info("Completed Azure DevOps test run %s", run_id)
 
 
 def _point_by_test_case_id(points: list[dict]) -> dict[str, dict]:

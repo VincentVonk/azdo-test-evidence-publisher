@@ -77,6 +77,24 @@ class Settings:
     upload_result_evidence: bool = True
     upload_result_evidence_for: str = "failed"
     max_attachment_size_mb: int = 25
+    evidence_include_patterns: list[str] = field(default_factory=lambda: ["**/*"])
+    evidence_exclude_patterns: list[str] = field(
+        default_factory=lambda: [
+            "**/index.html",
+            "**/snapshot.html",
+            "**/uiMode.html",
+            "**/.last-run.json",
+            "**/*.css",
+            "**/*.js",
+            "**/*.mjs",
+            "**/*.map",
+            "**/*.woff",
+            "**/*.woff2",
+            "**/*.ttf",
+            "**/*.otf",
+            "**/playwright-report/**",
+        ]
+    )
 
 
 @dataclass(slots=True)

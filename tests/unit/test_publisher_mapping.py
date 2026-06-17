@@ -70,7 +70,7 @@ def test_publish_fails_for_missing_test_point(tmp_path) -> None:
         ),
         encoding="utf-8",
     )
-    publisher = AzureDevOpsPublisher(load_config(config_file), "secret")
+    publisher = AzureDevOpsPublisher(load_config(config_file), "secret", detailed_logging=True)
     publisher.client = FakeClient()  # type: ignore[assignment]
 
     with pytest.raises(MappingError):
@@ -93,7 +93,7 @@ def test_publish_maps_result_to_point(tmp_path) -> None:
         ),
         encoding="utf-8",
     )
-    publisher = AzureDevOpsPublisher(load_config(config_file), "secret")
+    publisher = AzureDevOpsPublisher(load_config(config_file), "secret", detailed_logging=True)
     publisher.client = FakeClient()  # type: ignore[assignment]
     publisher.publish([TestResult("101", "x", "x", Outcome.PASSED)], [])
 
@@ -115,7 +115,7 @@ def test_publish_does_not_call_azdo_when_duplicates_fail(tmp_path) -> None:
         ),
         encoding="utf-8",
     )
-    publisher = AzureDevOpsPublisher(load_config(config_file), "secret")
+    publisher = AzureDevOpsPublisher(load_config(config_file), "secret", detailed_logging=True)
     fake_client = FakeClient()
     publisher.client = fake_client  # type: ignore[assignment]
 
@@ -368,7 +368,7 @@ def test_upload_summary_counts_result_attachment(tmp_path, caplog) -> None:
         attachment_level=AttachmentLevel.RESULT,
         related_test_case_id="101",
     )
-    publisher = AzureDevOpsPublisher(load_config(config_file), "secret")
+    publisher = AzureDevOpsPublisher(load_config(config_file), "secret", detailed_logging=True)
     fake_client = FakeClient()
     publisher.client = fake_client  # type: ignore[assignment]
 

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from fnmatch import fnmatch
 import logging
 from mimetypes import guess_type
 from pathlib import Path
@@ -25,6 +26,23 @@ SUPPORTED_EXTENSIONS = {
     ".zip",
     ".webm",
 }
+
+DEFAULT_INCLUDE_PATTERNS = ["**/*"]
+DEFAULT_EXCLUDE_PATTERNS = [
+    "**/index.html",
+    "**/snapshot.html",
+    "**/uiMode.html",
+    "**/.last-run.json",
+    "**/*.css",
+    "**/*.js",
+    "**/*.mjs",
+    "**/*.map",
+    "**/*.woff",
+    "**/*.woff2",
+    "**/*.ttf",
+    "**/*.otf",
+    "**/playwright-report/**",
+]
 
 EvidenceMatcher = Callable[[Attachment, TestResult], bool]
 
@@ -60,8 +78,15 @@ class EvidenceMatchingSummary:
 
 
 class EvidenceCollector:
-    def __init__(self, max_attachment_size_mb: int = 25) -> None:
+    def __init__(
+        self,
+        max_attachment_size_mb: int = 25,
+        include_patterns: list[str] | None = None,
+        exclude_patterns: list[str] | None = None,
+    ) -> None:
         self.max_bytes = max_attachment_size_mb * 1024 * 1024
+        self.include_patterns = include_patterns if include_patterns is not None else DEFAULT_INCLUDE_PATTERNS
+        self.exclude_patterns = exclude_patterns if exclude_patterns is not None else DEFAULT_EXCLUDE_PATTERNS
 
     def collect(self, base_dir: Path, evidence_folder: str | None) -> EvidenceSummary:
         summary = EvidenceSummary()
@@ -80,6 +105,10 @@ class EvidenceCollector:
                         files.append(path)
         for path in sorted(set(file.resolve() for file in files)):
             summary.scanned_count += 1
+            if not self._included(path) or self._excluded(path):
+                summary.skipped_type.append(path)
+                logger.debug("Evidence skipped by include/exclude pattern: %s", path)
+                continue
             if path.suffix.lower() not in SUPPORTED_EXTENSIONS:
                 summary.skipped_type.append(path)
                 logger.debug("Evidence skipped due to unsupported type: %s", path)
@@ -101,6 +130,14 @@ class EvidenceCollector:
             )
         return summary
 
+    def _included(self, path: Path) -> bool:
+        value = _path_for_matching(path)
+        return any(fnmatch(value, pattern) or fnmatch(path.name, pattern) for pattern in self.include_patterns)
+
+    def _excluded(self, path: Path) -> bool:
+        value = _path_for_matching(path)
+        return any(fnmatch(value, pattern) or fnmatch(path.name, pattern) for pattern in self.exclude_patterns)
+
 
 @dataclass(slots=True)
 class EvidenceAssociation:
@@ -113,9 +150,11 @@ class EvidenceAssociator:
         self,
         tc_id_pattern: str = r"TC-(\d+)",
         custom_matchers: list[EvidenceMatcher] | None = None,
+        detailed_logging: bool = False,
     ) -> None:
         self.tc_id_regex = re.compile(tc_id_pattern, re.IGNORECASE)
         self.custom_matchers = custom_matchers or []
+        self.detailed_logging = detailed_logging
 
     def associate(
         self,
@@ -142,10 +181,11 @@ class EvidenceAssociator:
                     continue
                 associations[result.test_case_id].evidence_files.append(attachment)
                 seen_by_result[result.test_case_id].add(resolved_path)
-                logger.info("Matched evidence")
-                logger.info("  tcId=%s", result.test_case_id)
-                logger.info("  file=%s", attachment.name)
-                logger.info("  strategy=%s", strategy)
+                if self.detailed_logging:
+                    logger.info("Matched evidence")
+                    logger.info("  tcId=%s", result.test_case_id)
+                    logger.info("  file=%s", attachment.name)
+                    logger.info("  strategy=%s", strategy)
 
         for test_case_id, association in associations.items():
             if not association.evidence_files:
@@ -185,10 +225,15 @@ def associate_evidence_with_summary(
     upload_result_evidence_for: str = "failed",
     tc_id_pattern: str = r"TC-(\d+)",
     custom_matchers: list[EvidenceMatcher] | None = None,
+    detailed_logging: bool = False,
 ) -> tuple[list[Attachment], EvidenceMatchingSummary]:
     by_id = {result.test_case_id: result for result in results if result.test_case_id}
     result_scope = upload_result_evidence_for.lower()
-    associator = EvidenceAssociator(tc_id_pattern=tc_id_pattern, custom_matchers=custom_matchers)
+    associator = EvidenceAssociator(
+        tc_id_pattern=tc_id_pattern,
+        custom_matchers=custom_matchers,
+        detailed_logging=detailed_logging,
+    )
     associations = associator.associate(results, attachments)
     associated = _deduplicate_attachments(attachments)
     attachment_by_path = {attachment.path.resolve(): attachment for attachment in associated}
@@ -202,9 +247,10 @@ def associate_evidence_with_summary(
             matching_summary.tests_with_matched_evidence += 1
         else:
             matching_summary.tests_without_matched_evidence += 1
-            logger.warning("No result-level evidence matched")
-            logger.warning("  tcId=%s", matched_result.test_case_id)
-            logger.warning("  testName=%s", matched_result.name)
+            if detailed_logging:
+                logger.warning("No result-level evidence matched")
+                logger.warning("  tcId=%s", matched_result.test_case_id)
+                logger.warning("  testName=%s", matched_result.name)
         for evidence_file in association.evidence_files:
             attachment = attachment_by_path[evidence_file.path.resolve()]
             attachment.attachment_level = AttachmentLevel.RESULT
@@ -224,6 +270,7 @@ def associate_evidence(
     upload_result_evidence_for: str = "failed",
     tc_id_pattern: str = r"TC-(\d+)",
     custom_matchers: list[EvidenceMatcher] | None = None,
+    detailed_logging: bool = False,
 ) -> list[Attachment]:
     associated, _summary = associate_evidence_with_summary(
         attachments,
@@ -231,6 +278,7 @@ def associate_evidence(
         upload_result_evidence_for,
         tc_id_pattern,
         custom_matchers,
+        detailed_logging,
     )
     return associated
 
@@ -254,6 +302,10 @@ def _path_search_values(path: Path) -> list[str]:
 
 def _normalize(value: str) -> str:
     return "".join(re.findall(r"[a-z0-9]+", value.lower()))
+
+
+def _path_for_matching(path: Path) -> str:
+    return str(path).replace("\\", "/")
 
 
 def _outcome_allowed(result: TestResult, result_scope: str) -> bool:

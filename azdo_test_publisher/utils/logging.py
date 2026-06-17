@@ -4,8 +4,8 @@ import logging
 import sys
 
 
-def configure_logging(verbose: bool = False) -> None:
-    level = logging.DEBUG if verbose else logging.INFO
+def configure_logging(verbose: bool = False, debug: bool = False) -> None:
+    level = logging.DEBUG if debug else logging.INFO
     logging.basicConfig(
         level=level,
         format="%(levelname)s %(message)s",

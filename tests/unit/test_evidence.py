@@ -46,6 +46,51 @@ def test_evidence_collection_counts_size_skips_and_directories(tmp_path: Path) -
     assert summary.directories_skipped_count == 1
 
 
+def test_evidence_collection_excludes_default_report_assets(tmp_path: Path) -> None:
+    evidence_dir = tmp_path / "evidence"
+    evidence_dir.mkdir()
+    allowed_trace = evidence_dir / "trace.zip"
+    excluded_html = evidence_dir / "index.html"
+    excluded_json = evidence_dir / ".last-run.json"
+    excluded_css = evidence_dir / "style.css"
+    allowed_trace.write_text("trace", encoding="utf-8")
+    excluded_html.write_text("html", encoding="utf-8")
+    excluded_json.write_text("json", encoding="utf-8")
+    excluded_css.write_text("css", encoding="utf-8")
+
+    summary = EvidenceCollector(
+        max_attachment_size_mb=25,
+        exclude_patterns=[
+            "**/index.html",
+            "**/.last-run.json",
+            "**/*.css",
+        ],
+    ).collect(tmp_path, "evidence")
+
+    assert summary.scanned_count == 4
+    assert summary.eligible_count == 1
+    assert summary.attachments[0].name == "trace.zip"
+    assert summary.skipped_type_count == 3
+
+
+def test_evidence_collection_include_exclude_override(tmp_path: Path) -> None:
+    evidence_dir = tmp_path / "evidence"
+    evidence_dir.mkdir()
+    trace = evidence_dir / "trace.zip"
+    screenshot = evidence_dir / "screenshot.png"
+    trace.write_text("trace", encoding="utf-8")
+    screenshot.write_text("png", encoding="utf-8")
+
+    summary = EvidenceCollector(
+        max_attachment_size_mb=25,
+        include_patterns=["**/*.zip"],
+        exclude_patterns=[],
+    ).collect(tmp_path, "evidence")
+
+    assert summary.eligible_count == 1
+    assert summary.attachments[0].name == "trace.zip"
+
+
 def test_evidence_association_by_tc_id_in_filename() -> None:
     summary = EvidenceCollector(max_attachment_size_mb=25).collect(FIXTURES, "evidence")
     results = [

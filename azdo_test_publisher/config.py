@@ -99,6 +99,27 @@ def load_config(path: str | Path) -> PublisherConfig:
             upload_result_evidence=bool(settings_raw.get("uploadResultEvidence", True)),
             upload_result_evidence_for=str(settings_raw.get("uploadResultEvidenceFor", "failed")).lower(),
             max_attachment_size_mb=int(settings_raw.get("maxAttachmentSizeMb", 25)),
+            evidence_include_patterns=list(settings_raw.get("evidenceIncludePatterns", ["**/*"])),
+            evidence_exclude_patterns=list(
+                settings_raw.get(
+                    "evidenceExcludePatterns",
+                    [
+                        "**/index.html",
+                        "**/snapshot.html",
+                        "**/uiMode.html",
+                        "**/.last-run.json",
+                        "**/*.css",
+                        "**/*.js",
+                        "**/*.mjs",
+                        "**/*.map",
+                        "**/*.woff",
+                        "**/*.woff2",
+                        "**/*.ttf",
+                        "**/*.otf",
+                        "**/playwright-report/**",
+                    ],
+                )
+            ),
         ),
         runs=runs,
         base_dir=config_path.parent,

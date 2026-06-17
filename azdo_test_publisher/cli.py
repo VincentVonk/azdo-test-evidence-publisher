@@ -47,6 +47,7 @@ class ValidationResult:
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="azdo-test-evidence-publisher")
     parser.add_argument("--verbose", action="store_true")
+    parser.add_argument("--debug", action="store_true")
     subparsers = parser.add_subparsers(dest="command", required=True)
     for command in ("validate", "publish"):
         sub = subparsers.add_parser(command)
@@ -59,16 +60,25 @@ def build_parser() -> argparse.ArgumentParser:
 def main(argv: list[str] | None = None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
-    configure_logging(args.verbose)
+    configure_logging(args.verbose, args.debug)
+    detailed_logging = bool(args.verbose or args.debug)
     try:
-        validation = validate_config(args.config, enforce=args.command == "publish")
+        validation = validate_config(
+            args.config,
+            enforce=args.command == "publish",
+            detailed_logging=detailed_logging,
+            log_evidence_summary=args.command == "validate",
+        )
         if args.command == "validate" and args.output:
             write_validation_report(validation, args.output)
         if args.command == "publish":
             token = resolve_token(validation.config)
             if not token:
                 raise ConfigError("No Azure DevOps token found in tokenEnvVar, AZDO_TOKEN, or AZDO_PAT")
-            AzureDevOpsPublisher(validation.config, token).publish(validation.results, validation.attachments)
+            AzureDevOpsPublisher(validation.config, token, detailed_logging=detailed_logging).publish(
+                validation.results,
+                validation.attachments,
+            )
         if validation.errors:
             raise MappingError("; ".join(validation.errors))
         return 0
@@ -77,10 +87,19 @@ def main(argv: list[str] | None = None) -> int:
         return 2
 
 
-def validate_config(config_path: str | Path, enforce: bool = True) -> ValidationResult:
+def validate_config(
+    config_path: str | Path,
+    enforce: bool = True,
+    detailed_logging: bool = False,
+    log_evidence_summary: bool = True,
+) -> ValidationResult:
     config = load_config(config_path)
     validation = ValidationResult(config=config)
-    collector = EvidenceCollector(config.settings.max_attachment_size_mb)
+    collector = EvidenceCollector(
+        config.settings.max_attachment_size_mb,
+        config.settings.evidence_include_patterns,
+        config.settings.evidence_exclude_patterns,
+    )
 
     for run in config.runs:
         parser = get_parser(run.result_format)
@@ -104,6 +123,7 @@ def validate_config(config_path: str | Path, enforce: bool = True) -> Validation
         validation.results,
         config.settings.upload_result_evidence_for,
         config.settings.mapping_pattern,
+        detailed_logging=detailed_logging,
     )
     summary = summarize_mapping(validation.results)
     validation.duplicate_details = duplicate_results_by_test_case_id(validation.results)
@@ -111,7 +131,7 @@ def validate_config(config_path: str | Path, enforce: bool = True) -> Validation
         validation.errors.append(f"{summary.unmapped} test(s) have no test case ID and allowUnmapped=false")
     if validation.duplicate_details and config.settings.duplicate_strategy == DuplicateStrategy.FAIL:
         validation.errors.append(format_duplicate_error(validation.duplicate_details))
-    _print_validation_summary(validation, summary.duplicates)
+    _print_validation_summary(validation, summary.duplicates, detailed_logging, log_evidence_summary)
 
     if validation.errors:
         validation.publish_ready = False
@@ -129,8 +149,29 @@ def validate_config(config_path: str | Path, enforce: bool = True) -> Validation
     return validation
 
 
-def _print_validation_summary(validation: ValidationResult, duplicates: dict[str, int]) -> None:
+def _print_validation_summary(
+    validation: ValidationResult,
+    duplicates: dict[str, int],
+    detailed_logging: bool,
+    log_evidence_summary: bool,
+) -> None:
     summary = summarize_mapping(validation.results)
+    logger.info(
+        "Validation: files=%s tests=%s mapped=%s unmapped=%s",
+        len(validation.result_files),
+        len(validation.results),
+        summary.mapped,
+        summary.unmapped,
+    )
+    if log_evidence_summary:
+        logger.info(
+            "Evidence: eligible=%s matched=%s uploaded=%s",
+            validation.evidence.eligible_count,
+            validation.evidence_matching.result_level_files_matched,
+            0,
+        )
+    if not detailed_logging:
+        return
     logger.info("Validation summary")
     logger.info("Result files discovered: %s", len(validation.result_files))
     logger.info("Tests parsed: %s", len(validation.results))

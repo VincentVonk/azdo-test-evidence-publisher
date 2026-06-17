@@ -125,7 +125,9 @@ class AzureDevOpsClient:
     )
     def _request(self, method: str, endpoint: str, **kwargs: Any) -> dict[str, Any]:
         url = f"{self.organization}/{self.project}/{endpoint.lstrip('/')}"
+        logger.debug("Azure DevOps REST request: method=%s url=%s params=%s json=%s", method, url, kwargs.get("params"), kwargs.get("json"))
         response = self.session.request(method, url, timeout=30, **kwargs)
+        logger.debug("Azure DevOps REST response: status=%s body=%s", response.status_code, response.text)
         if response.status_code in {408, 429, 500, 502, 503, 504}:
             raise AzureDevOpsError(f"Transient Azure DevOps API failure: HTTP {response.status_code}")
         if not response.ok:

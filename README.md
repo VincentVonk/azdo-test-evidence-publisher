@@ -59,6 +59,15 @@ Run validation before publishing:
 python -m azdo_test_publisher validate --config examples/robot.publisher.json
 ```
 
+Default logging is concise:
+
+```text
+INFO Validation: files=<n> tests=<n> mapped=<n> unmapped=<n>
+INFO Evidence: eligible=<n> matched=<n> uploaded=<n>
+```
+
+Use `--verbose` before the command for scan, matching, and upload summaries. Use `--debug` before the command for per-file scanning details plus Azure DevOps REST payloads and responses.
+
 Validation shows:
 
 - files discovered
@@ -113,7 +122,17 @@ The publisher validates local mappings before Azure DevOps calls. Before creatin
     "uploadRunEvidence": true,
     "uploadResultEvidence": true,
     "uploadResultEvidenceFor": "failed",
-    "maxAttachmentSizeMb": 25
+    "maxAttachmentSizeMb": 25,
+    "evidenceIncludePatterns": ["**/*"],
+    "evidenceExcludePatterns": [
+      "**/index.html",
+      "**/snapshot.html",
+      "**/uiMode.html",
+      "**/.last-run.json",
+      "**/*.css",
+      "**/*.js",
+      "**/playwright-report/**"
+    ]
   },
   "runs": [
     {
@@ -182,6 +201,8 @@ Evidence logging uses explicit lifecycle terms:
 - eligible = files allowed by type and size
 - matched = eligible files linked to a specific test result
 - uploaded = files actually attached to Azure DevOps
+
+Default evidence filtering excludes common report assets such as `index.html`, `snapshot.html`, `uiMode.html`, `.last-run.json`, CSS, JavaScript, fonts, and Playwright report assets. Result-level evidence such as `trace.zip`, screenshots, and `.webm` videos remains eligible when it passes the configured type and size filters. Override the defaults with `settings.evidenceIncludePatterns` and `settings.evidenceExcludePatterns`.
 
 ## Framework Examples
 
