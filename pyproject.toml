@@ -8,7 +8,7 @@ version = "0.1.0"
 description = "Framework-agnostic Azure DevOps Test Evidence Publisher"
 readme = "README.md"
 requires-python = ">=3.11"
-authors = [{ name = "CGI DevOps" }]
+authors = [{ name = "Vincent Vonk" }]
 dependencies = [
   "python-dotenv>=1.0.0",
   "requests>=2.31.0",
